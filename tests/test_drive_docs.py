@@ -281,6 +281,52 @@ def test_the_core_roadmap_does_not_deny_this_package_exists():
     )
 
 
+def test_the_core_roadmap_TABLE_does_not_mark_this_cycle_queued():
+    """**A thirteenth contradiction, found by reading rather than by a guard —
+    which is exactly why it is now a guard.**
+
+    `ROADMAP.md`'s cycle table had **The drive cycle** in a row whose state
+    cell read `queued`, under a heading saying *"nothing in it is claimed as
+    existing"*, on 2026-08-18. The README guard above could not see it: it
+    reads the README's queue table and stops at the file boundary. Same
+    class, one document over.
+
+    Derived the same way: the state cell of any row naming this cycle may not
+    say `queued` while the code performs the steps.
+    """
+    built = steps_the_code_performs()
+    assert built, "nothing derivable from the code, so this checks nothing"
+
+    path = core_root() / "ROADMAP.md"
+    if not path.is_file():
+        pytest.skip(f"the core is importable but {path} is absent")
+
+    rows = [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip().startswith("|")
+    ]
+    assert rows, "no table rows in the core ROADMAP at all"
+
+    named = [row for row in rows if re.search(r"\bdrive cycle\b", row, re.I)]
+    assert named, (
+        "the core ROADMAP no longer has a row naming the drive cycle, so this "
+        "guard would pass while checking nothing. If the row was renamed, "
+        "re-derive the pattern; if the table went, say so here"
+    )
+
+    queued = [
+        row for row in named
+        if re.search(r"\|\s*(?:queued|planned|not started)\s*\|?\s*$", row, re.I)
+    ]
+    assert not queued, (
+        "the core ROADMAP marks this cycle queued while it drives "
+        + ", ".join(f"step {n}" for n in sorted(built))
+        + ":\n"
+        + "\n".join(f"  {row}" for row in queued)
+    )
+
+
 # --- the board-path ordering, pinned on BOTH endings ------------------------
 
 
