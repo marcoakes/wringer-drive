@@ -537,3 +537,65 @@ def test_both_endings_render_the_board_in_the_orchestrator_itself():
         "the board is rendered only on the refused branch — a converged run "
         "would finish without a page"
     )
+
+
+# --- the install a stranger will actually run -------------------------------
+
+
+def declared_dependencies() -> list[str]:
+    """`pyproject.toml`'s runtime dependencies, read off the file.
+
+    Parsed with `tomllib`, so the fact comes from the packaging metadata a
+    resolver will really use rather than from a sentence somebody kept up to
+    date by hand.
+    """
+    import tomllib
+
+    data = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
+    raw = data.get("project", {}).get("dependencies", [])
+    names = []
+    for entry in raw:
+        name = re.split(r"[<>=!~\[; ]", entry.strip(), maxsplit=1)[0]
+        if name:
+            names.append(name)
+    return names
+
+
+def test_the_readme_tells_a_stranger_how_to_install_every_dependency():
+    """**Red on a real defect, found by RUNNING rather than by reading.**
+
+    On 2026-08-18 a clean clone of this repository was installed into a fresh
+    virtual environment to check that it could be, and it could not:
+
+      Because wringer-board was not found in the package registry and
+      wringer-drive==0.1.0 depends on wringer-board, we can conclude that
+      wringer-drive==0.1.0 cannot be used.
+
+    Neither sibling is on PyPI, so `pip install -e .` — the first command a
+    stranger types — fails with a resolver error that says nothing about what
+    to do. The README said nothing about installing anything.
+
+    Derived from `pyproject.toml`, so a dependency added later drags the
+    README with it: every declared dependency must be named in a runnable
+    block here. It cannot check that PyPI lacks them (these tests send
+    nothing over the network), and it does not need to — naming them is
+    right either way.
+    """
+    declared = declared_dependencies()
+    assert declared, (
+        "`pyproject.toml` declares no runtime dependencies, so this guard "
+        "would pass while checking nothing"
+    )
+
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    runnable = "\n".join(re.findall(r"```bash\s*\n(.*?)```", readme, re.DOTALL))
+
+    missing = [name for name in declared if name not in runnable]
+    assert not missing, (
+        "this package declares "
+        + ", ".join(f"`{n}`" for n in declared)
+        + " as dependencies, and the README's runnable blocks never install "
+        + ", ".join(f"`{n}`" for n in missing)
+        + ". Neither sibling is on PyPI, so `pip install -e .` alone fails "
+        "with a resolver error — which is the first thing a stranger meets"
+    )

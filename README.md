@@ -10,6 +10,35 @@ It takes what you wrote about what you want built, asks you the questions
 nobody could answer for you, shows you a plan in plain language, and waits.
 Nothing is built until you say yes.
 
+## Installing it
+
+**`pip install -e .` on its own does not work, and this line says so rather
+than letting you find out.** This package composes the two beside it —
+`wringer` and `wringer-board` — and **neither of those is on PyPI**, so a
+resolver asked to fetch them fails outright:
+
+```
+Because wringer-board was not found in the package registry and
+wringer-drive==0.1.0 depends on wringer-board, we can conclude that
+wringer-drive==0.1.0 cannot be used.
+```
+
+Install all three from source, siblings first. Measured on 2026-08-18 from a
+clean clone into a fresh virtual environment:
+
+```bash
+pip install -e ../wringer
+pip install -e ../wringer-board
+pip install -e .
+wringer-drive --help
+```
+
+`wringer` is at [github.com/marcoakes/wringer](https://github.com/marcoakes/wringer)
+and `wringer-board` at
+[github.com/marcoakes/wringer-board](https://github.com/marcoakes/wringer-board);
+the engine's [install page](https://github.com/marcoakes/wringer/blob/main/INSTALL.md)
+clones both. Adjust the paths to wherever you put them.
+
 ## It is meant to be driven by your coding agent
 
 You already have one — Wringer's [install page](https://github.com/marcoakes/wringer/blob/main/INSTALL.md)
