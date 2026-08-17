@@ -20,8 +20,10 @@ unguarded:
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -267,10 +269,263 @@ def delivery_step() -> Step:
     )
 
 
-def run_command(repo: Path, argv: list[str]) -> subprocess.CompletedProcess:
+def engine(verb: str) -> str:
+    """The `wring` this process should drive.
+
+    **Beside `sys.executable` first, PATH second.** A DRIVE installed in a
+    virtualenv is driving the engine installed in that same virtualenv; taking
+    PATH's `wring` would silently drive a DIFFERENT install, which is the
+    stale-`wring` defect this programme has already shipped once.
+    """
+    beside = Path(sys.executable).parent / verb
+    return str(beside) if beside.is_file() else verb
+
+
+def run_command(repo: Path, argv: list[str], env: dict | None = None
+                ) -> subprocess.CompletedProcess:
     """One engine command, as a subprocess. Never `--send` unless told."""
     return subprocess.run(
-        argv, cwd=repo, capture_output=True, text=True, check=False
+        argv, cwd=repo, capture_output=True, text=True, check=False, env=env
+    )
+
+
+def _json_or_stop(done: subprocess.CompletedProcess, *, allow: tuple[int, ...]
+                  ) -> dict:
+    """The one JSON object a `--json` verb printed, or a stop carrying its words.
+
+    `allow` is the exit codes whose stdout is still meant to be read — a loop
+    that ends red exits non-zero and has said something worth rendering, and
+    treating that as a crash would throw the engine's own account away.
+    """
+    if done.returncode not in allow:
+        raise Stop(stop_for("", "", engine_words=(done.stderr or done.stdout).strip()),
+                   done.returncode or 1)
+    line = (done.stdout or "").strip().splitlines()
+    try:
+        return json.loads(line[-1]) if line else {}
+    except json.JSONDecodeError:
+        # It exited as expected and printed something that is not the object
+        # this asked for. That is the engine's words, verbatim — never a
+        # sentence written here about what it might have meant.
+        raise Stop(stop_for("", "", engine_words=(done.stdout or "").strip()),
+                   done.returncode or 1) from None
+
+
+# --- step 7: install the approved gates (SPEC_DRIVE_V0 §3a) ------------------
+
+
+def gate_proposal(repo: Path) -> dict:
+    """What `wring plan` would like `.wringer.yaml` to have, as its own JSON.
+
+    Read through `--json` rather than the prose report, because ruling 1
+    forbids re-implementing an engine format and the report is a format.
+    """
+    return _json_or_stop(
+        run_command(repo, [engine("wring"), "plan", "--json"]), allow=(0,)
+    )
+
+
+def gate_diff_step(proposal: dict) -> Step | None:
+    """The diff itself, verbatim, or None when there is nothing to install.
+
+    **None is not "nothing happened"** — it is the case where every proposed
+    gate is already declared, and the caller says so rather than asking a
+    person to approve an empty change. A yes to nothing is not consent.
+    """
+    diff = proposal.get("gate_diff") or ""
+    if not diff.strip():
+        return None
+    return Step(
+        kind=SHOW,
+        id="gate-diff",
+        text="Before anything is built, this adds the checks that will prove "
+        "the work. This is the exact change to the project's settings:",
+        engine_words=diff,
+        detail={"gates": list(proposal.get("gates_proposed") or ())},
+    )
+
+
+def gate_approval_step(proposal: dict) -> Step:
+    """The second interlock §3a rests on, asked after the diff was rendered."""
+    names = ", ".join(proposal.get("gates_proposed") or ()) or "no new checks"
+    return Step(
+        kind=CONFIRM,
+        id="install-gates",
+        text=f"That change adds: {names}.",
+        question="Shall I add those checks to the project?",
+        refusing_means="the project's settings are left exactly as they are, "
+        "and nothing is built.",
+    )
+
+
+def install_gates(repo: Path, proposal: dict, *, answered_yes: bool) -> bool:
+    """Apply the rendered diff, and only it. §3a's four conditions.
+
+    **`git apply`, not a writer of this package's own.** The diff `wring plan`
+    printed IS the hand edit — `spec.gate_diff`'s own docstring says the `a/`
+    and `b/` prefixes are there so `git apply` accepts it as-is. Applying it
+    moves exactly the bytes the person read; a YAML round-trip here would
+    reformat the file, drop every comment, and make byte-equality a fiction.
+
+    Returns whether anything was installed.
+    """
+    diff = proposal.get("gate_diff") or ""
+    if not diff.strip():
+        return False
+    if not answered_yes:
+        raise Stop(
+            Step(
+                kind=STOPPED,
+                id="stopped:gates-declined",
+                text="Nothing was built, because the checks that would prove "
+                "the work were not added. Nothing in the project changed.",
+            ),
+            exit_code=0,
+        )
+    done = subprocess.run(
+        ["git", "apply", "--whitespace=nowarn", "-"],
+        cwd=repo, input=diff, capture_output=True, text=True, check=False,
+    )
+    if done.returncode != 0:
+        raise Stop(stop_for("", "", engine_words=(done.stderr or "").strip()),
+                   done.returncode)
+    return True
+
+
+# --- step 8: the build loop -------------------------------------------------
+
+
+def build_steps(repo: Path) -> list[Step]:
+    """Run the loop, and say how it ended in the board's words.
+
+    **Progress reaches the operator as steps, never as a bar** (§4): a
+    percentage nothing measures is a number this package would be inventing,
+    and inventing numbers is the whole thing it exists not to do.
+
+    The ending is rendered through `refusals.say(LOOP_ENDING, ...)`, so an
+    `environment` stop is a card like any other. F6's tiers are the ENGINE's
+    to decide and this never widens one: it renders the reason it was given.
+    """
+    started = Step(
+        kind=SHOW,
+        id="building",
+        text="Building now. This runs your project's own checks, hands each "
+        "failure to your coding agent, and runs them again — for as many "
+        "attempts as the project allows.",
+    )
+    outcome = _json_or_stop(
+        run_command(repo, [engine("wring"), "run", "--json"]), allow=(0, 1)
+    )
+    reason = str(outcome.get("reason") or "")
+    from wringer_board import refusals
+
+    ending = stop_for(refusals.LOOP_ENDING, reason)
+    return [
+        started,
+        Step(
+            kind=SHOW if outcome.get("status") == "converged" else STOPPED,
+            id=f"build:{reason or 'unknown'}",
+            text=ending.text,
+            question=ending.question,
+            engine_words=ending.engine_words,
+            detail={"iterations": outcome.get("iterations"),
+                    "loop": outcome.get("loop_dir")},
+        ),
+    ]
+
+
+def latest_refusal_step(repo: Path, engine_words: str) -> Step:
+    """The engine's refusal, in the board's words — ruling 3's three branches.
+
+    The record is the ONLY place the "which no" lives: `wring deliver` exits
+    with a code and prints prose, and 23 different refusals share that code.
+    `deliver.record_refusal` writes the name; `read.latest_refusal` finds it;
+    `refusals.say` is the one place a sentence for it may come from.
+
+    **A missing or unreadable record is branch 3, not a guess.** If the record
+    cannot be read there is no named value, and inventing one from the prose
+    would be this package deciding what the engine meant.
+    """
+    from wringer_board import read, refusals
+
+    record = read.latest_refusal(repo)
+    if record is None:
+        return stop_for("", "", engine_words=engine_words)
+    try:
+        payload = json.loads(record.read_text(encoding="utf-8"))
+        reason = str(payload["reason"])
+    except (OSError, ValueError, KeyError):
+        return stop_for("", "", engine_words=engine_words)
+    return stop_for(refusals.DELIVERY_REFUSAL, reason, engine_words=engine_words)
+
+
+def delivery_plan(repo: Path) -> dict:
+    """What delivery WOULD do, without `--send`. Ruling 2a's first half.
+
+    A refusal here is the common ending, not the exceptional one: the engine
+    refuses a handover it cannot evidence, and that refusal is the product
+    working. It is rendered, never resolved.
+    """
+    done = run_command(repo, [engine("wring"), "deliver", "--json"])
+    if done.returncode != 0:
+        raise Stop(
+            latest_refusal_step(repo, (done.stderr or done.stdout).strip()),
+            done.returncode,
+        )
+    return _json_or_stop(done, allow=(0,))
+
+
+def deliver(repo: Path, *, answered_yes: bool) -> dict:
+    """`--send`, and ONLY on a second yes given against the rendered board.
+
+    Ruling 2a: the approval at step 6 was about what would be BUILT. This is
+    about writing git history and opening a merge request, which is a
+    different act about a different thing, and one yes may not cover both.
+    """
+    if not answered_yes:
+        raise Stop(
+            Step(
+                kind=STOPPED,
+                id="stopped:not-delivered",
+                text="Nothing was sent anywhere. The work and its evidence "
+                "stay on this machine, and you can hand it over later.",
+            ),
+            exit_code=0,
+        )
+    done = run_command(repo, [engine("wring"), "deliver", "--send", "--json"])
+    if done.returncode != 0:
+        raise Stop(
+            latest_refusal_step(repo, (done.stderr or done.stdout).strip()),
+            done.returncode,
+        )
+    return _json_or_stop(done, allow=(0,))
+
+
+# --- step 10: the board -----------------------------------------------------
+
+
+BOARD_FILENAME = "board.html"
+
+
+def render_board(repo: Path) -> Path:
+    """One page a person can read. The last thing the verb does, win or lose."""
+    done = run_command(
+        repo,
+        [engine("wringer-board"), "render", str(repo), "-o", BOARD_FILENAME],
+    )
+    if done.returncode != 0:
+        raise Stop(stop_for("", "", engine_words=(done.stderr or "").strip()),
+                   done.returncode)
+    return repo / BOARD_FILENAME
+
+
+def board_step(board_path: Path) -> Step:
+    return Step(
+        kind=SHOW,
+        id="board",
+        text=f"The page showing what is done, what is proved, and what still "
+        f"needs you is at {board_path.name}.",
+        detail={"board": str(board_path)},
     )
 
 

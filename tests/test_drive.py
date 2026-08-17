@@ -53,12 +53,37 @@ def project(tmp_path: Path) -> Path:
             spec.Criterion(id="exports-csv", title="It exports a CSV", required=True),
         ),
         gates=(),
-        tasks=(spec.Task(id="build", brief="Build it", objective="It exports."),),
+        # `brief` is a PATH `wring plan` writes to, not prose. The derived
+        # allow-set caught this: prose here made the chain write a file
+        # literally called "Build it" at the repository root.
+        tasks=(
+            spec.Task(id="build", brief="briefs/build.md", objective="It exports."),
+        ),
         path="wringer.spec.yaml",
     )
     (repo / "wringer.spec.yaml").write_text(spec.render(drafted), encoding="utf-8")
+    # **A project with the sections the CHAIN needs, not just the ones `wring
+    # init` writes.** Steps 3, 8 and 9 each hard-refuse without `judge:`,
+    # `run:` and `deliver:` — which is finding 3, and the reason §3a exists.
+    # A fixture missing them tests a repository no operator could drive.
     (repo / ".wringer.yaml").write_text(
-        'version: 1\ngates:\n  - id: unit\n    run: "true"\n', encoding="utf-8"
+        'version: 1\n'
+        'gates:\n'
+        '  - id: unit\n'
+        '    run: "true"\n'
+        '\n'
+        'judge:\n'
+        '  endpoint: http://127.0.0.1:1/v1/chat/completions\n'
+        '  model: none\n'
+        '  rubric: wringer.rubric.yaml\n'
+        '\n'
+        'run:\n'
+        '  worker: "true"\n'
+        '  max_iterations: 1\n'
+        '\n'
+        'deliver:\n'
+        '  branch: "wringer/{run}"\n',
+        encoding="utf-8",
     )
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
@@ -161,14 +186,46 @@ def test_a_yes_approves_only_after_the_plan_was_rendered(project, tmp_path, caps
     document = prd(tmp_path)
     sys.stdin = io.StringIO("The ones on screen.\nyes\n")
     try:
-        code = main(["run", str(document), "--repo", str(project)])
+        main(["run", str(document), "--repo", str(project)])
     finally:
         sys.stdin = sys.__stdin__
-    assert code == 0
     out = capsys.readouterr().out
     assert "HOW EACH PIECE WILL BE PROVED" in out
     assert out.index("HOW EACH PIECE") < out.index("Is that what you meant?")
     assert "approved: true" in (project / "wringer.spec.yaml").read_text()
+
+
+def test_the_run_ends_at_a_refusal_rendered_in_the_boards_words(
+    project, tmp_path, capsys
+):
+    """**The whole chain, and the ending it really has.**
+
+    This fixture has no remote, so `wring deliver` refuses. That refusal is
+    the product working, and what this pins is that a PM reads the BOARD's
+    sentence for it rather than an exit code — through the record, which is
+    the only place the name of the "which no" exists.
+    """
+    import io
+    import sys
+
+    from wringer_board import refusals
+
+    document = prd(tmp_path)
+    sys.stdin = io.StringIO("The ones on screen.\nyes\n")
+    try:
+        code = main(["run", str(document), "--repo", str(project)])
+    finally:
+        sys.stdin = sys.__stdin__
+    assert code != 0, "a refused handover is not a success"
+
+    saying = refusals.say(refusals.DELIVERY_REFUSAL, "default_branch_unknown")
+    shown = capsys.readouterr()
+    assert saying.sentence in (shown.out + shown.err), (
+        "the refusal did not reach the operator in the board's words"
+    )
+    # And the board was still rendered — the page is how a person finds out
+    # why, so a refusal may not cost them it.
+    assert (project / "board.html").is_file()
 
 
 # --- INVARIANT 1: no-file-edited, with the set DERIVED ----------------------
@@ -189,6 +246,9 @@ def test_it_writes_only_what_the_chain_is_entitled_to_write(project, tmp_path):
         config.CONFIG_FILENAME,
         ".wringer",           # the bundle root, including drive's own output
         ".git",
+        ".gitignore",         # `wring init`
+        "briefs",             # `wring plan`, one brief per task
+        run_module.BOARD_FILENAME,   # step 10, and DERIVED rather than typed
     }
     for attr in ("GATESPEC_FILENAME", "TASKS_FILENAME", "RUBRIC_FILENAME"):
         value = getattr(spec, attr, None)

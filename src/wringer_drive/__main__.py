@@ -164,13 +164,61 @@ def _run(session: run_module.Session, args) -> int:
             )
         )
 
-    done = run_module.Step(
+    approved = run_module.Step(
         kind="show",
         id="approved",
         text="Approved. The plan is recorded and the build can start.",
     )
-    session.emit(done)
-    _render([done], mode)
+    session.emit(approved)
+    _render([approved], mode)
+
+    # Step 7 — the proposed gates, as a diff, INSTALLED only on a yes (§3a).
+    # The diff is rendered by this process before the question is asked, for
+    # the same reason the plan is: the interlock is that a person SAW it.
+    proposal = run_module.gate_proposal(repo)
+    diff = run_module.gate_diff_step(proposal)
+    if diff is not None:
+        session.emit(diff)
+        _render([diff], mode)
+        said = _ask(run_module.gate_approval_step(proposal), mode).lower()
+        run_module.install_gates(repo, proposal, answered_yes=said in ("y", "yes"))
+    else:
+        # Every proposed check is already installed. Said out loud rather than
+        # skipped silently: a step that vanishes looks like one that failed.
+        nothing = run_module.Step(
+            kind="show",
+            id="gates-already-installed",
+            text="The checks that will prove this work are already part of "
+            "the project, so there is nothing to add.",
+        )
+        session.emit(nothing)
+        _render([nothing], mode)
+
+    # Step 8 — the loop, with the worker the project declares.
+    for step in run_module.build_steps(repo):
+        session.emit(step)
+        _render([step], mode)
+
+    # Steps 9 and 10 — the board is rendered BEFORE the handover is offered,
+    # because ruling 2a's second authorisation is given against it. A refusal
+    # still renders the board: the page is how a person finds out why.
+    try:
+        run_module.delivery_plan(repo)
+    except run_module.Stop:
+        session.emit(run_module.board_step(run_module.render_board(repo)))
+        _render(session.steps[-1:], mode)
+        raise
+
+    board = run_module.board_step(run_module.render_board(repo))
+    session.emit(board)
+    _render([board], mode)
+
+    said = _ask(run_module.delivery_step(), mode).lower()
+    run_module.deliver(repo, answered_yes=said in ("y", "yes"))
+
+    final = run_module.final_step(repo, run_module.render_board(repo))
+    session.emit(final)
+    _render([final], mode)
     return 0
 
 
