@@ -32,6 +32,26 @@ from wringer_drive.steps import ASK, CONFIRM, DONE, SHOW, STOPPED, Step
 DRIVE_DIRNAME = Path(".wringer") / "drive"
 PRD_FILENAME = "prd.md"
 
+# The engine verbs this package drives, and the refusal FAMILIES each can put
+# in front of an operator. Declared here and checked against the source by
+# `test_the_reachable_refusal_families_are_derived_from_what_DRIVE_DRIVES`, so
+# a step added later either widens this set or fails.
+#
+# **Families, not values** (finding 10): `refusals.MAPPING` is keyed on
+# `(family, value)` pairs deliberately, and 19 of its 45 pairs come from
+# `attest`, `audit`, `health` and `fleet` — none of which appears in §2. A test
+# over "every value" would demand sentences for stops this verb cannot reach.
+ENGINE_VERBS: dict[str, tuple[str, ...]] = {
+    "plan": (),
+    "run": ("loop-ending",),
+    "deliver": ("delivery-refusal",),
+    # `wringer-board render` reads what the others wrote and refuses nothing.
+    # Declared with an empty tuple rather than omitted, because the check is
+    # that every verb DRIVEN is accounted for — silence would read as "not
+    # driven", which is the state this exists to catch.
+    "render": (),
+}
+
 
 class Stop(Exception):
     """The run stopped. Carries the step that says why, in the PM's language.

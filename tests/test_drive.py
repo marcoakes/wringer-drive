@@ -470,6 +470,58 @@ def test_a_refusal_with_NO_named_value_renders_the_engines_words_verbatim():
     assert "exactly what the tool said" in step.text
 
 
+def test_the_reachable_refusal_families_are_derived_from_what_DRIVE_DRIVES():
+    """**INVARIANT 3, corrected (finding 10).**
+
+    The reachable set is not typed out: it is checked against the verbs this
+    package actually shells out to, read out of the source with `ast`. A step
+    that starts driving `wring health` either declares the family it can now
+    surface or reddens this.
+    """
+    from wringer_board import refusals
+
+    source = (SRC / "run.py").read_text(encoding="utf-8")
+    driven = set()
+    for node in ast.walk(ast.parse(source)):
+        # The shape `[engine("wring"), "<verb>", ...]` — the verb is the
+        # element after the resolved executable, never a name matched on prose.
+        if not isinstance(node, ast.List) or len(node.elts) < 2:
+            continue
+        head, verb = node.elts[0], node.elts[1]
+        if (
+            isinstance(head, ast.Call)
+            and getattr(head.func, "id", None) == "engine"
+            and isinstance(verb, ast.Constant)
+            and isinstance(verb.value, str)
+            and not verb.value.startswith("-")
+        ):
+            driven.add(verb.value)
+
+    assert driven, "the source was not introspected at all"
+    assert driven == set(run_module.ENGINE_VERBS), (
+        f"DRIVE drives {sorted(driven)} but declares "
+        f"{sorted(run_module.ENGINE_VERBS)} — a verb whose refusals nothing "
+        f"claims to render is a stop a PM meets as an exit code"
+    )
+
+    reachable = {f for fams in run_module.ENGINE_VERBS.values() for f in fams}
+    assert reachable <= set(refusals.FAMILIES), reachable
+
+    # Every reachable PAIR renders the board's sentence AND its question.
+    for family, value in refusals.MAPPING:
+        if family not in reachable:
+            continue
+        step = run_module.stop_for(family, value)
+        assert step.text and step.question, (family, value)
+        assert "no wording for yet" not in step.text, (family, value)
+
+    # And the families that come from verbs §2 never names stay out of it, so
+    # this cannot quietly become "every family" and claim more than it proves.
+    for absent in ("signature", "identity", "integrity", "health-verdict",
+                   "fleet-outcome"):
+        assert absent not in reachable, absent
+
+
 def test_every_delivery_refusal_the_engine_can_emit_reaches_a_sentence():
     """Derived, both directions, from the engine's own closed tuple."""
     deliver = pytest.importorskip("wringer.deliver")
