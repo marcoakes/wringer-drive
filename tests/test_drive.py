@@ -305,12 +305,23 @@ def proposing(project: Path) -> Path:
     The sidecar is the engine's own channel for a per-criterion binding, and
     the file is written the way `wring spec`'s own message tells an operator
     to write it by hand — never a shape invented here.
+
+    **This binding ran `true` until 2026-08-19, and the engine now refuses
+    that.** The project fixture declares `unit: run: "true"`, so the proposed
+    binding was byte-identical to a check that already ran and passed — a gate
+    that could not have gone red whatever a worker did, which is precisely the
+    thing `spec.parse_bindings` started refusing that day. The engine's new
+    rule found it in this package's own fixture, which is the cross-repo guard
+    working rather than a test being tidied.
+
+    It is RED here, and red is the correct colour for a check that proves a
+    criterion nobody has built yet.
     """
     (project / "wringer.gates.yaml").write_text(
         "schema_version: wringer.gatespec.v1\n"
         "gates:\n"
         "  - id: acc-exports-csv\n"
-        '    run: "true"\n'
+        '    run: "test -f exports.csv"\n'
         "    proves: exports-csv\n",
         encoding="utf-8",
     )
@@ -609,7 +620,11 @@ def test_BOTH_TRANSPORTS_INSTALL_BYTE_IDENTICAL_GATES(proposing, tmp_path, capsy
     for transport in ("text", "json"):
         clone = tmp_path / f"clone-{transport}"
         shutil.copytree(proposing, clone)
-        sys.stdin = io.StringIO("yes\nyes\n")
+        # **Three answers now**: approve the plan, decline the trial run of
+        # the proposed checks (step 7a), install. The trial is declined so
+        # this test keeps measuring exactly one thing — the bytes the two
+        # transports write.
+        sys.stdin = io.StringIO("yes\nno\nyes\n")
         try:
             main(["run", str(prd(tmp_path)), "--repo", str(clone),
                   "--emit", transport])
@@ -678,3 +693,230 @@ def test_nothing_in_drive_writes_a_judgement():
         text = path.read_text(encoding="utf-8")
         assert "judgements.yaml" not in text, path.name
         assert "judgement" not in text.lower() or "judgements.yaml" not in text
+
+
+# --- step 7a: a check that already passes, said while it still matters ------
+#
+# **The defect, measured twice.** On 2026-08-17 a product manager was shown a
+# check, told it "must be seen to FAIL first", said yes — and five seconds
+# later the handover was held because that check could never have failed. The
+# fact existed at the moment of the question and nothing used it.
+
+
+@pytest.fixture
+def proposing_green(project: Path) -> Path:
+    """A proposed binding whose command PASSES against the tree as it stands.
+
+    `git rev-parse HEAD` succeeds in any repository with a commit, and this
+    fixture is one. It is not `true`, because a binding byte-identical to the
+    project's declared `unit` gate is refused by the engine before it ever
+    reaches a diff — which is the other half of this pair of guards.
+    """
+    (project / "wringer.gates.yaml").write_text(
+        "schema_version: wringer.gatespec.v1\n"
+        "gates:\n"
+        "  - id: acc-exports-csv\n"
+        '    run: "git rev-parse HEAD"\n'
+        "    proves: exports-csv\n",
+        encoding="utf-8",
+    )
+    approve_the_plan(project)
+    return project
+
+
+def test_the_trial_reads_the_proposed_gates_through_the_ENGINES_parser(
+    proposing_green,
+):
+    """Never by parsing the diff: that is an engine format, and ruling 1
+    forbids re-implementing one. The diff is applied to a COPY and read back
+    with `config.load`, so what runs is what the engine would run."""
+    proposal = run_module.gate_proposal(proposing_green)
+    gates = run_module.proposed_gates(proposing_green, proposal)
+
+    assert [gate.id for gate in gates] == ["acc-exports-csv"]
+    assert gates[0].run == "git rev-parse HEAD"
+    # And the real file was not touched to find that out.
+    config = pytest.importorskip("wringer.config")
+    assert "acc-exports-csv" not in (
+        proposing_green / config.CONFIG_FILENAME
+    ).read_text(encoding="utf-8")
+
+
+def test_a_check_that_already_passes_is_named_AT_THE_DIFF_in_the_BOARDS_words(
+    proposing_green,
+):
+    from wringer_board import refusals
+
+    proposal = run_module.gate_proposal(proposing_green)
+    gates = run_module.proposed_gates(proposing_green, proposal)
+    green = run_module.already_passing(proposing_green, gates)
+    assert green == ("acc-exports-csv",), "the trial did not find it green"
+
+    step = run_module.trial_result_step(gates, green)
+    saying = refusals.say(refusals.GATE_AT_INSTALL, "born-green")
+
+    assert saying.sentence in step.text, (
+        "DRIVE wrote its own sentence about a check instead of the board's"
+    )
+    assert step.question == saying.question
+    assert "acc-exports-csv" in step.text
+
+
+def test_a_check_that_is_RED_today_is_not_reported_as_born_green(proposing):
+    """The other direction, and the reason this pair exists: a guard that
+    said "already passes" about everything would satisfy the test above while
+    describing every check in the world."""
+    from wringer_board import refusals
+
+    proposal = run_module.gate_proposal(proposing)
+    gates = run_module.proposed_gates(proposing, proposal)
+    green = run_module.already_passing(proposing, gates)
+
+    assert gates and green == (), "the fixture's check is not red after all"
+    step = run_module.trial_result_step(gates, green)
+    saying = refusals.say(refusals.GATE_AT_INSTALL, "born-green")
+    assert saying.sentence not in step.text
+    assert "None of them passes today" in step.text
+
+
+def test_the_trial_RUNS_NOTHING_until_a_person_says_yes(project, tmp_path, capsys):
+    """**The reason this is a separate question at all.**
+
+    A proposed `run:` string was written by a model, and `.wringer.yaml` is
+    the only file that puts a command in Wringer's mouth. Executing one before
+    anybody approved anything would run unapproved, model-authored shell — and
+    would have run it even if the answer turned out to be no.
+
+    Observed rather than asserted about: the proposed command writes a file,
+    and the file's existence is the record of whether it ran.
+    """
+    import io
+    import sys
+
+    sentinel = project / "the-proposed-command-ran"
+    (project / "wringer.gates.yaml").write_text(
+        "schema_version: wringer.gatespec.v1\n"
+        "gates:\n"
+        "  - id: acc-exports-csv\n"
+        f'    run: "touch {sentinel.name}"\n'
+        "    proves: exports-csv\n",
+        encoding="utf-8",
+    )
+    approve_the_plan(project)
+
+    # **Two fresh copies, never the same tree driven twice.** A second run in
+    # an approved tree asks a different number of questions, so re-using the
+    # tree would shift every answer by one and the test would be measuring
+    # its own stdin rather than the feature.
+    import shutil
+
+    document = prd(tmp_path)
+    for answers, should_have_run in (
+        ("yes\nno\nno\n", False),      # approve · decline trial · decline install
+        ("yes\nyes\nno\n", True),      # approve · TRY · decline install
+    ):
+        clone = tmp_path / f"clone-{int(should_have_run)}"
+        shutil.copytree(project, clone)
+        ran = clone / sentinel.name
+        sys.stdin = io.StringIO(answers)
+        try:
+            main(["run", str(document), "--repo", str(clone)])
+        finally:
+            sys.stdin = sys.__stdin__
+        shown = capsys.readouterr()
+        assert "Shall I try them" in (shown.out + shown.err), (
+            "the run never reached the trial question, so this asserts nothing"
+        )
+        if should_have_run:
+            assert ran.exists(), "a yes to the trial ran nothing"
+        else:
+            assert not ran.exists(), (
+                "a command nobody approved was executed on the operator's "
+                "machine"
+            )
+
+
+# --- no diff: THREE reasons, and they are not the same news -----------------
+
+
+def test_NOTHING_PROPOSED_is_never_reported_as_already_installed():
+    """**The false sentence, measured on 2026-08-19.**
+
+    Driving a real PRD, the drafter proposed no binding at all — nine
+    criteria, nothing checking any of them — and this package told the
+    operator "the checks that will prove this work are already part of the
+    project". They had just read "NOTHING CHECKS THIS YET" nine times in the
+    plan. That is not a missing sentence, it is a false one.
+    """
+    step = run_module.nothing_to_install_step(
+        {"gates_proposed": [], "gates_already_declared": [], "gate_diff": ""}
+    )
+    assert step.id == "gates-none-proposed"
+    assert "already part of the project" not in step.text
+    assert "No checks were proposed" in step.text
+
+
+def test_ALREADY_DECLARED_is_the_only_case_that_says_already_installed():
+    step = run_module.nothing_to_install_step(
+        {"gates_proposed": [], "gates_already_declared": ["acc-csv"],
+         "gate_diff": ""}
+    )
+    assert step.id == "gates-already-installed"
+    assert "already part of the project" in step.text
+    assert "acc-csv" in step.text, "it does not say WHICH checks"
+
+
+def test_PROPOSALS_THAT_COULD_NOT_BE_WRITTEN_are_never_silent():
+    """The engine returns no diff when appending would risk a second `gates:`
+    key, and prints the gates in words instead. Reporting that as "nothing to
+    add" would silently drop real checks."""
+    step = run_module.nothing_to_install_step(
+        {"gates_proposed": ["acc-csv"], "gates_already_declared": [],
+         "gate_diff": ""}
+    )
+    assert step.id == "gates-not-installable"
+    assert "acc-csv" in step.text
+    assert "already part of the project" not in step.text
+
+
+def test_the_setup_step_names_where_the_key_has_to_be(project, tmp_path, capsys):
+    """**Found by running it.** DRIVE asks for an endpoint, a model and a
+    worker, and never mentions that the endpoint needs a key — so the first
+    real drive died at step 3 with `'judge.api_key_env' names WRINGER_API_KEY,
+    which is not set in this environment`, a sentence about an environment
+    variable said to the reader least able to act on it.
+
+    DRIVE cannot check whether it is set — it may not read the environment at
+    all, which `test_there_is_no_flag_that_answers_the_approval` enforces — so
+    the honest fix is to say what it wrote down, when it writes it.
+    """
+    import io
+    import sys
+
+    config = pytest.importorskip("wringer.config")
+    (project / config.CONFIG_FILENAME).unlink()      # force the setup branch
+    # `wring init` stops outright in a project that declares no runnable
+    # check, so the fixture needs one for the setup branch to be reachable
+    # at all. This is the same file the demo repository is detected from.
+    (project / "pyproject.toml").write_text(
+        "[tool.pytest.ini_options]\ntestpaths = [\"tests\"]\n"
+        "\n[tool.ruff]\nline-length = 100\n",
+        encoding="utf-8",
+    )
+
+    sys.stdin = io.StringIO(
+        "http://127.0.0.1:1/v1/chat/completions\nnone\ntrue\n"
+    )
+    try:
+        main(["run", str(prd(tmp_path)), "--repo", str(project)])
+    finally:
+        sys.stdin = sys.__stdin__
+
+    shown = capsys.readouterr()
+    said = shown.out + shown.err
+    assert run_module.DECLARED_DEFAULTS["api_key_env"] in said, (
+        "the operator is never told where the key has to be"
+    )
+    # Derived, not typed: whatever the generated config names is what is said.
+    generated = (project / config.CONFIG_FILENAME).read_text(encoding="utf-8")
+    assert run_module.DECLARED_DEFAULTS["api_key_env"] in generated

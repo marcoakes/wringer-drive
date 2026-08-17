@@ -312,7 +312,12 @@ def generate_workspace(session: Session, repo: Path, answers: dict) -> None:
             text=f"I set the project up to run its own checks: "
             f"{', '.join(g.id for g in written.gates)}. Nothing was invented "
             f"— these come from {', '.join(found.sources) or 'this project'}, "
-            "which already declares them.",
+            "which already declares them.\n\n"
+            "Reading your document costs money, so the model endpoint needs a "
+            f"key. The project will look for it in {DECLARED_DEFAULTS['api_key_env']}, "
+            "which has to be set in the environment before the next step. "
+            "Wringer never stores a key and this tool never reads one.",
+            detail={"api_key_env": DECLARED_DEFAULTS["api_key_env"]},
         )
     )
 
@@ -519,12 +524,68 @@ def gate_proposal(repo: Path) -> dict:
     )
 
 
+def nothing_to_install_step(proposal: dict) -> Step:
+    """Why there is no diff — and there are THREE reasons, not one.
+
+    **Found by driving a real PRD on 2026-08-19.** This branch used to say one
+    sentence: *"The checks that will prove this work are already part of the
+    project, so there is nothing to add."* On that run the drafter had
+    proposed no binding at all — every criterion was unbound and nothing
+    checked any of them — and a product manager who had just read
+    "NOTHING CHECKS THIS YET" nine times in the plan was told the opposite,
+    by this package, in its own words. That is not a missing sentence; it is a
+    false one.
+
+    The three cases are told apart from `wring plan`'s own JSON, never from
+    the prose:
+
+    - nothing proposed at all — `gates_proposed` and `gates_already_declared`
+      both empty;
+    - every proposal already declared — the case the old sentence described,
+      and the only one it was true of;
+    - proposals that could not be expressed as an edit to this file. The
+      engine returns no diff when appending would risk a second `gates:` key,
+      and it prints them in words instead. Saying "nothing to add" there would
+      silently drop real checks.
+    """
+    fresh = tuple(proposal.get("gates_proposed") or ())
+    already = tuple(proposal.get("gates_already_declared") or ())
+    if fresh:
+        return Step(
+            kind=SHOW,
+            id="gates-not-installable",
+            text="Checks were proposed for this work — "
+            + ", ".join(fresh)
+            + " — but they could not be written into the project's settings "
+            "automatically, so they have not been added. An engineer has to "
+            "put them in by hand.",
+            detail={"gates": list(fresh)},
+        )
+    if already:
+        return Step(
+            kind=SHOW,
+            id="gates-already-installed",
+            text="The checks that will prove this work — "
+            + ", ".join(already)
+            + " — are already part of the project, so there is nothing to add.",
+            detail={"gates": list(already)},
+        )
+    return Step(
+        kind=SHOW,
+        id="gates-none-proposed",
+        text="No checks were proposed for this work, so there is nothing to "
+        "add. The plan above says which requirements that leaves with nothing "
+        "checking them.",
+    )
+
+
 def gate_diff_step(proposal: dict) -> Step | None:
     """The diff itself, verbatim, or None when there is nothing to install.
 
-    **None is not "nothing happened"** — it is the case where every proposed
-    gate is already declared, and the caller says so rather than asking a
-    person to approve an empty change. A yes to nothing is not consent.
+    **None is not "nothing happened"** — it is one of the three cases
+    `nothing_to_install_step` tells apart, and the caller says which rather
+    than asking a person to approve an empty change. A yes to nothing is not
+    consent.
     """
     diff = proposal.get("gate_diff") or ""
     if not diff.strip():
@@ -536,6 +597,147 @@ def gate_diff_step(proposal: dict) -> Step | None:
         "the work. This is the exact change to the project's settings:",
         engine_words=diff,
         detail={"gates": list(proposal.get("gates_proposed") or ())},
+    )
+
+
+# --- step 7a: a check that already passes, said BEFORE the person answers ---
+
+
+def trial_step(proposal: dict) -> Step:
+    """Permission to RUN the proposed checks, asked before running them.
+
+    **The prompt this was built from said to run them without asking. That
+    would have widened what this package may do, and the widening is not
+    small.** A proposed `run:` string was written by a model. `.wringer.yaml`
+    is the only file that puts a command in Wringer's mouth, and the only way
+    into it is a person applying a diff — so executing that command *before*
+    the person has approved anything would run unapproved, model-authored
+    shell on their machine, and would still have run it if they then said no.
+
+    Asking costs one keystroke and gives up nothing: the answer arrives at the
+    same moment either way. So this is a separate question, and its text says
+    what the trial buys.
+    """
+    names = ", ".join(proposal.get("gates_proposed") or ()) or "no new checks"
+    return Step(
+        kind=CONFIRM,
+        id="try-gates",
+        text=f"Those checks have not been run yet: {names}.",
+        question="Shall I try them against the project as it stands, before "
+        "you decide? A check that already passes cannot show the difference "
+        "this work makes.",
+        refusing_means="they are not run, and you decide whether to add them "
+        "without knowing whether any of them already passes.",
+    )
+
+
+def proposed_gates(repo: Path, proposal: dict) -> tuple:
+    """The gates the diff would add, as the ENGINE's own parser reads them.
+
+    **The diff is applied to a COPY, in a temporary directory, and read back
+    with `config.load`.** Not parsed here: the diff is an engine format and
+    ruling 1 forbids re-implementing one. Not applied to the real file: the
+    person has not approved anything yet, and a verb that edited their config
+    to answer its own question would have already done the thing it is asking
+    about.
+
+    Empty on any failure — an unapplyable diff, a config the loader refuses.
+    The caller says so out loud rather than treating silence as "all clear",
+    because a trial that quietly did not happen is worse than no trial.
+    """
+    import tempfile
+
+    from wringer import config, spec
+
+    diff = proposal.get("gate_diff") or ""
+    fresh = set(proposal.get("gates_proposed") or ())
+    source = repo / config.CONFIG_FILENAME
+    if not diff.strip() or not fresh or not source.is_file():
+        return ()
+    with tempfile.TemporaryDirectory() as tmp:
+        copy = Path(tmp) / config.CONFIG_FILENAME
+        copy.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+        # **The spec travels with it.** `config.load` refuses a config whose
+        # gates bind to criteria with no `wringer.spec.yaml` beside them —
+        # correctly, and it is the whole point of a binding — so a copy of
+        # only the config would be refused for a reason that is an artifact of
+        # copying. Found by running this, not by reading it.
+        beside = repo / spec.SPEC_FILENAME
+        if beside.is_file():
+            (Path(tmp) / spec.SPEC_FILENAME).write_text(
+                beside.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+        done = subprocess.run(
+            ["git", "apply", "--whitespace=nowarn", "-"],
+            cwd=tmp, input=diff, capture_output=True, text=True, check=False,
+        )
+        if done.returncode != 0:
+            return ()
+        try:
+            loaded = config.load(copy)
+        except config.ConfigError:
+            return ()
+    return tuple(gate for gate in loaded.gates if gate.id in fresh)
+
+
+def already_passing(repo: Path, gates: tuple) -> tuple[str, ...]:
+    """Which of those checks passes against the tree as it stands.
+
+    Run only after a yes. A check that times out or cannot start is NOT
+    counted as passing: the claim being made is "this passed today", and the
+    honest answer to an unknown is not a claim.
+    """
+    green = []
+    for gate in gates:
+        try:
+            done = subprocess.run(
+                gate.run, shell=True, cwd=repo, capture_output=True,
+                text=True, check=False, timeout=gate.timeout,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if done.returncode == 0:
+            green.append(gate.id)
+    return tuple(green)
+
+
+def trial_result_step(tried: tuple, green: tuple[str, ...]) -> Step:
+    """What the trial found, with the meaning in the board's words.
+
+    DRIVE says which checks ran and which passed — those are measurements, and
+    naming a check is something this package already does. What a green one
+    MEANS is a sentence about a gate, so it comes from
+    `refusals.say(GATE_AT_INSTALL, ...)` verbatim, like every other.
+    """
+    from wringer_board import refusals
+
+    if not tried:
+        return Step(
+            kind=SHOW,
+            id="gates-not-tried",
+            text="Those checks could not be run here, so nothing is known "
+            "about whether any of them already passes.",
+        )
+    ran = ", ".join(gate.id for gate in tried)
+    if not green:
+        return Step(
+            kind=SHOW,
+            id="gates-tried",
+            text=f"I ran them against the project as it stands: {ran}. None "
+            "of them passes today.",
+            detail={"tried": [gate.id for gate in tried], "already_passing": []},
+        )
+    saying = refusals.say(refusals.GATE_AT_INSTALL, "born-green")
+    return Step(
+        kind=SHOW,
+        id="gates-tried",
+        text=f"I ran them against the project as it stands: {ran}. "
+        + ", ".join(green)
+        + " — "
+        + saying.sentence,
+        question=saying.question,
+        detail={"tried": [gate.id for gate in tried],
+                "already_passing": list(green)},
     )
 
 

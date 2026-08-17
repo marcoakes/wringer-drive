@@ -208,17 +208,25 @@ def _run(session: run_module.Session, args) -> int:
     if diff is not None:
         session.emit(diff)
         _render([diff], mode)
+        # Step 7a — a check that already passes today is named HERE, before the
+        # yes, because at the handover it is five seconds too late. Running a
+        # model-authored command needs its own permission: see `trial_step`.
+        said = _ask(run_module.trial_step(proposal), mode).lower()
+        if said in ("y", "yes"):
+            tried = run_module.proposed_gates(repo, proposal)
+            found = run_module.trial_result_step(
+                tried, run_module.already_passing(repo, tried)
+            )
+            session.emit(found)
+            _render([found], mode)
         said = _ask(run_module.gate_approval_step(proposal), mode).lower()
         run_module.install_gates(repo, proposal, answered_yes=said in ("y", "yes"))
     else:
-        # Every proposed check is already installed. Said out loud rather than
-        # skipped silently: a step that vanishes looks like one that failed.
-        nothing = run_module.Step(
-            kind="show",
-            id="gates-already-installed",
-            text="The checks that will prove this work are already part of "
-            "the project, so there is nothing to add.",
-        )
+        # No diff, and the THREE reasons for that are not the same news. Said
+        # out loud rather than skipped: a step that vanishes looks like one
+        # that failed, and the sentence that used to stand here was false on a
+        # real run.
+        nothing = run_module.nothing_to_install_step(proposal)
         session.emit(nothing)
         _render([nothing], mode)
 
