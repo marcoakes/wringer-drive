@@ -295,6 +295,147 @@ def test_a_target_that_is_not_a_git_repository_stops_in_plain_language(tmp_path)
     assert "engineer" in stopped.value.step.text
 
 
+# --- INVARIANT 4: byte-equality, including §3a's gate append -----------------
+
+
+@pytest.fixture
+def proposing(project: Path) -> Path:
+    """The same project, with a gate PROPOSED that is not yet installed.
+
+    The sidecar is the engine's own channel for a per-criterion binding, and
+    the file is written the way `wring spec`'s own message tells an operator
+    to write it by hand — never a shape invented here.
+    """
+    (project / "wringer.gates.yaml").write_text(
+        "schema_version: wringer.gatespec.v1\n"
+        "gates:\n"
+        "  - id: acc-exports-csv\n"
+        '    run: "true"\n'
+        "    proves: exports-csv\n",
+        encoding="utf-8",
+    )
+    approve_the_plan(project)
+    return project
+
+
+def approve_the_plan(repo: Path) -> None:
+    """Answer and approve through the BOARD's own writers, never by hand."""
+    from wringer_board import interview
+
+    for question in interview.unanswered(repo):
+        interview.answer(repo, question.id, "The ones on screen.")
+    interview.approve(repo, read_the_plan=True)
+
+
+def added_lines(diff: str) -> list[str]:
+    """The `+` lines of a unified diff, without its `+++` header."""
+    return [
+        row[1:] for row in diff.splitlines()
+        if row.startswith("+") and not row.startswith("+++")
+    ]
+
+
+def test_installing_the_gates_adds_the_diffs_lines_AND_TOUCHES_NOTHING_ELSE(
+    proposing,
+):
+    """**§3a's byte-equality, checked against the diff rather than the writer.**
+
+    The property is not "some YAML with the gate in it" — it is that the
+    file after equals the file before with exactly the rendered diff's added
+    lines inserted, and nothing else moved. That is what makes it identical
+    to a hand edit, and it is what a `yaml.safe_load`/`dump` round-trip would
+    fail: it would reformat the document and silently drop every comment in
+    it, while still producing a file that loads.
+    """
+    config = pytest.importorskip("wringer.config")
+    before = (proposing / config.CONFIG_FILENAME).read_text(encoding="utf-8")
+
+    proposal = run_module.gate_proposal(proposing)
+    assert proposal["gates_proposed"] == ["acc-exports-csv"], proposal
+    installed = run_module.install_gates(proposing, proposal, answered_yes=True)
+    assert installed is True
+
+    after = (proposing / config.CONFIG_FILENAME).read_text(encoding="utf-8")
+    expected = added_lines(proposal["gate_diff"])
+    assert expected, "the engine rendered no additions to check against"
+
+    # **Positional, not set-wise.** An earlier draft of this removed the added
+    # lines by value and compared what was left, which a writer appending them
+    # to the END of the file would have passed — the check has to know WHERE
+    # they landed, or it is not checking the thing its name claims.
+    import difflib
+
+    ops = difflib.SequenceMatcher(
+        a=before.splitlines(), b=after.splitlines(), autojunk=False
+    ).get_opcodes()
+    inserted: list[str] = []
+    for tag, _, _, start, end in ops:
+        assert tag in ("equal", "insert"), (
+            f"installing the gates {tag}d lines the diff never claimed to touch"
+        )
+        if tag == "insert":
+            inserted += after.splitlines()[start:end]
+    assert inserted == expected, (
+        "the lines installed are not the lines the person was shown"
+    )
+    # And the result is a config the ENGINE still loads, with the gate live.
+    loaded = config.load(proposing / config.CONFIG_FILENAME)
+    assert "acc-exports-csv" in [gate.id for gate in loaded.gates]
+
+
+def test_a_no_to_the_gate_diff_leaves_the_config_BYTE_IDENTICAL(proposing):
+    """§3a condition 1: a no leaves the file byte-identical, and there is no
+    flag that skips the diff."""
+    config = pytest.importorskip("wringer.config")
+    path = proposing / config.CONFIG_FILENAME
+    before = path.read_bytes()
+
+    proposal = run_module.gate_proposal(proposing)
+    with pytest.raises(run_module.Stop) as stopped:
+        run_module.install_gates(proposing, proposal, answered_yes=False)
+
+    assert path.read_bytes() == before
+    assert stopped.value.exit_code == 0, "declining is not an error"
+
+
+def test_no_approval_means_no_gate_is_INSTALLED_and_no_worker_runs(
+    proposing, tmp_path, capsys
+):
+    """**INVARIANT 2, corrected (finding 12).** Gates are PROPOSED at step 3,
+    four steps before approval; installation is the act approval gates.
+
+    Two authorisations, two assertions: no yes at the gate diff means the
+    config is untouched, and the loop never ran.
+    """
+    import io
+    import sys
+
+    config = pytest.importorskip("wringer.config")
+    path = proposing / config.CONFIG_FILENAME
+    before = path.read_bytes()
+
+    # **The fixture already answered and approved, so the FIRST prompt this
+    # run reaches is the plan's.** An earlier draft fed an answer first; that
+    # answer was read as the approval, the run stopped at step 6, and the test
+    # passed having never reached step 7 at all — green while asserting
+    # nothing. Watched to fail before being trusted.
+    document = prd(tmp_path)
+    sys.stdin = io.StringIO("yes\nno\n")
+    try:
+        main(["run", str(document), "--repo", str(proposing)])
+    finally:
+        sys.stdin = sys.__stdin__
+
+    shown = capsys.readouterr()
+    assert "Shall I add those checks" in (shown.out + shown.err), (
+        "the run never reached the gate question, so this asserts nothing"
+    )
+    assert path.read_bytes() == before, "a gate was installed without a yes"
+    assert not (proposing / ".wringer" / "loops").exists(), (
+        "the loop ran without the gates that would have proved it"
+    )
+
+
 # --- INVARIANT 3: refusal-surface, three branches ---------------------------
 
 
