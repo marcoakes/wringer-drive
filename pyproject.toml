@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wringer-drive"
+version = "0.1.0"
+description = "One verb: prose in, a board out. The operating surface for a product manager."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+# **No web server, and no dependency that implies one** (B1, inherited from
+# SPEC_BOARD_V0 §1). It composes the two packages beside it.
+dependencies = ["wringer", "wringer-board"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff"]
+
+[project.scripts]
+wringer-drive = "wringer_drive.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
