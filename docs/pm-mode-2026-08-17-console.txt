@@ -1,0 +1,120 @@
+[   0.0s] show     prd-copied
+          I copied your document into the project, at .wringer/drive/prd.md, because the tool only reads files inside it. Your original is untouched.
+[   0.1s] ask      setup:endpoint
+          Which model endpoint should read your document and draft the plan? Paste the URL your team uses.
+   --> https://api.anthropic.com/v1/chat/completions
+[   0.1s] ask      setup:model
+          Which model should it use? (a name, like the one on your team's API page)
+   --> claude-sonnet-4-6
+[   0.1s] ask      setup:worker
+          Which coding agent should do the building? Give the command that starts it.
+   --> acp: …/venv/bin/python …/acp_model_agent.py https://api.anthropic.com/v1/chat/completions claude-sonnet-4-6 …/.key
+[   0.2s] show     workspace
+          I set the project up to run its own checks: test. Nothing was invented — these come from pyproject.toml, which already declares them.
+[  22.6s] show     drafting
+          Reading your document and drafting a plan from it. This sends the document to the model endpoint the project declares, which usually costs a small amount.
+[  22.6s] ask      question:export-trigger
+          How should the export be triggered — a button on the report page, a URL parameter, a menu item, or something else?
+   --> Same as the report page already does; see tests/test_csv_export.py.
+[  22.6s] ask      question:column-headers
+          Should the CSV include a header row, and if so should the header labels match the on-screen column names exactly?
+   --> Same as the report page already does; see tests/test_csv_export.py.
+[  22.6s] ask      question:date-range
+          Which week does the report cover — the current calendar week, the last 7 days, or a user-selected range — and should that be reflected in the export?
+   --> Same as the report page already does; see tests/test_csv_export.py.
+[  22.6s] ask      question:auth-required
+          Must the export endpoint enforce the same authentication and authorisation as the report page?
+   --> Same as the report page already does; see tests/test_csv_export.py.
+[  22.6s] ask      question:existing-test-files
+          Which existing test files cover the report view so gate_bindings can reference them rather than new files?
+   --> Same as the report page already does; see tests/test_csv_export.py.
+[  22.6s] show     plan
+          Weekly report CSV export
+          
+          # Weekly report export
+          
+          Managers keep asking us for the weekly report as a spreadsheet so they can
+          send it round. Right now they screenshot it.
+          
+          We want them to be able to export the report as a CSV file. The CSV should
+          have the same rows the report already shows, in the same order.
+          
+          WHAT I WILL BUILD
+          
+            - Add a backend endpoint (or view) that accepts a request for the weekly report in CSV format and returns a response with Content-Type text/csv, a Content-Disposition attachment header with a .csv filename, and a body that is valid RFC 4180 CSV whose rows and columns match exactly what the existing report view renders, in the same order.
+            - Add a clearly labelled export control (e.g. an 'Export CSV' button or link) to the weekly report page that triggers a download from the new endpoint. The control must be visible without scrolling on a typical desktop viewport and must not break any existing report page behaviour.
+          
+          HOW EACH PIECE WILL BE PROVED
+          
+            Export response has Content-Type text/csv
+              must — NOTHING CHECKS THIS YET. It will be reported as unevidenced and it will not be claimed as done
+          
+            Response triggers a file download
+              must — NOTHING CHECKS THIS YET. It will be reported as unevidenced and it will not be claimed as done
+          
+            CSV contains exactly the same rows as the report, in the same order
+              must — NOTHING CHECKS THIS YET. It will be reported as unevidenced and it will not be claimed as done
+          
+            CSV columns match the report columns
+              must — NOTHING CHECKS THIS YET. It will be reported as unevidenced and it will not be claimed as done
+          
+            Output is valid RFC 4180 CSV
+              must — NOTHING CHECKS THIS YET. It will be reported as unevidenced and it will not be claimed as done
+          
+            Existing report page continues to render correctly after the change
+              must — the check `bind-no-regression` — and it must be seen to FAIL first (proposed, not installed yet — somebody has to accept it before it runs)
+          
+            The export action is visible and clearly labelled on the report page
+              must — A PERSON decides this. No check can, and none will be written for it — you record the answer yourself
+          
+          WHAT THIS PLAN DOES NOT SAY
+          
+            That the criteria are the right ones. Wringer checks a binding's
+            consequences, never its wisdom — if a requirement is worded wrongly,
+            a green check against it proves the wrong thing perfectly.
+[  22.6s] confirm  approve
+          That is what will be built, and how each piece will be proved.
+          Is that what you meant? Nothing is built until you say yes.
+   --> yes
+[  22.6s] show     approved
+          Approved. The plan is recorded and the build can start.
+[  22.8s] show     gate-diff
+          Before anything is built, this adds the checks that will prove the work. This is the exact change to the project's settings:
+          --- a/.wringer.yaml
+          +++ b/.wringer.yaml
+          @@ -18,6 +18,9 @@
+             - id: test
+               run: pytest -q
+               timeout: 300
+          +  - id: bind-no-regression
+          +    run: pytest -q
+          +    proves: no-regression-report-page
+           
+           judge:
+             endpoint: https://api.anthropic.com/v1/chat/completions
+[  22.8s] confirm  install-gates
+          That change adds: bind-no-regression.
+          Shall I add those checks to the project?
+   --> yes
+[  27.2s] show     building
+          Building now. This runs your project's own checks, hands each failure to your coding agent, and runs them again — for as many attempts as the project allows.
+[  27.2s] show     build:converged
+          The work finished: the checks it was asked to satisfy are passing.
+          Nothing is needed from you on this one.
+[  27.4s] show     board
+          The page showing what is done, what is proved, and what still needs you is at board.html.
+[  27.4s] stopped  stopped:acceptance_unevidenced
+          The handover is being held because at least one requirement cannot show its proof.
+          See the cards above — each one holding this up says what it needs.
+          wring deliver: refusing to deliver 20260817-173935-d100 — its gates passed,
+          but the spec is not satisfied by the record:
+          
+            no-regression-report-page — UNEVIDENCED
+              `bind-no-regression` passed, but nothing in the record shows it can fail — a gate born green evidences nothing. run `wring verify --prove` to record whether it can fail, or install the gate first and watch it go red
+            export-discoverable — HUMAN
+              nobody has answered this — a person decides it, and records the decision in `wringer.judgements.yaml`
+          
+          A criterion is evidenced when its gate passed AND the record shows that gate
+          can fail. Make the evidence better, not the check weaker.
+
+=== exit 1 · 10 answers from the operator · 27.5s wall clock ===
