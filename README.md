@@ -36,12 +36,30 @@ driving, the same steps appear at a terminal — the same words, laid out.
 
 ## State
 
-**Steps 0 to 6 are built** — the document, the interview, the plan, the
-approval. Steps 7 to 10 (install gates, build, deliver, render the board) are
-not. The contract is
-[SPEC_DRIVE_V0.md](https://github.com/marcoakes/wringer/blob/main/SPEC_DRIVE_V0.md),
-independently reviewed before any of this was written — **NOT SOUND, 19
-findings, all folded** — and its §8 is the list of what remains.
+**The whole chain is built** — steps 0 to 10: the document, the interview, the
+plan, the approval, installing the approved checks, the repair loop, the
+handover, and the page at the end. Measured end to end on 2026-08-17:
+**27.5 seconds** of wall clock from a prose file to a rendered board, in
+[docs/pm-mode-2026-08-17.md](docs/pm-mode-2026-08-17.md).
+
+**That run exited non-zero, and that is the product working.** `wring deliver`
+refused to hand over work it could not evidence, the refusal was rendered in
+the board's own words, and the page was still written so the person could see
+why. A green exit code was never the thing being sold.
+
+The contract is
+[SPEC_DRIVE_V0.md](https://github.com/marcoakes/wringer/blob/main/SPEC_DRIVE_V0.md).
+Before any of this was written it went through a one-agent refute pass on
+2026-08-17 — **NOT SOUND, 19 findings (9 HIGH), all folded** — recorded in
+its §12. **That was not an independent review**, and the spec's §11 says so in
+its own state table: a separate, later review by someone who did not then
+build to the spec has not begun. It is worth saying plainly here, because a
+claim about verification is the worst possible place to round up.
+
+**What this package is NOT yet.** It has no public remote and is not on PyPI,
+so today it exists on one machine and in this directory; and no stranger has
+yet read a board it produced and said what it means, which is the check that
+would make "a PM can use this" something other than a hope.
 
 Filmed both ways: [docs/drive-2026-08-17.md](docs/drive-2026-08-17.md).
 
