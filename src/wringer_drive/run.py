@@ -42,6 +42,10 @@ PRD_FILENAME = "prd.md"
 # `attest`, `audit`, `health` and `fleet` — none of which appears in §2. A test
 # over "every value" would demand sentences for stops this verb cannot reach.
 ENGINE_VERBS: dict[str, tuple[str, ...]] = {
+    # Neither `init` nor `spec` carries a NAMED refusal value: both stop with
+    # stderr prose and an exit code, which is ruling 3's branch 3.
+    "init": (),
+    "spec": (),
     "plan": (),
     "run": ("loop-ending",),
     "deliver": ("delivery-refusal",),
@@ -170,6 +174,176 @@ def bring_prd_inside(session: Session, prd: Path) -> Path:
         )
     )
     return inside
+
+
+# --- steps 2 and 3: the workspace, then the draft ---------------------------
+
+# What DRIVE may fill in for itself, because none of it points anywhere or
+# names a command: a filename, an attempt budget, a branch template. The three
+# it may NOT invent are asked for — an endpoint is a network address, a model
+# is a bill, and a worker is a command, and ruling 5's whole point is that a
+# generated config which invented a command nobody wrote would be a gate whose
+# green means nothing.
+DECLARED_DEFAULTS = {"rubric": "wringer.rubric.yaml", "max_iterations": 2,
+                     "branch": "wringer/{run}",
+                     # The NAME of the variable holding the key, never a key
+                     # and never a value. DRIVE cannot read the environment at
+                     # all — `test_there_is_no_flag_that_answers_the_approval`
+                     # forbids it structurally — so this names where the
+                     # ENGINE should look and nothing more.
+                     "api_key_env": "WRINGER_API_KEY",
+                     # The engine's own default is 1024, which TRUNCATES the
+                     # reply for any real PRD — measured, twice, against a
+                     # live endpoint before this number was written down.
+                     # A truncated draft is not a smaller draft: `wring spec`
+                     # refuses the whole reply and writes nothing.
+                     "max_output_tokens": 8000}
+
+SETUP_QUESTIONS = (
+    Step(kind=ASK, id="setup:endpoint",
+         text="Which model endpoint should read your document and draft the "
+              "plan? Paste the URL your team uses.",
+         detail={"key": "endpoint"}),
+    Step(kind=ASK, id="setup:model",
+         text="Which model should it use? (a name, like the one on your "
+              "team's API page)",
+         detail={"key": "model"}),
+    Step(kind=ASK, id="setup:worker",
+         text="Which coding agent should do the building? Give the command "
+              "that starts it.",
+         detail={"key": "worker"}),
+)
+
+
+def _worker_block(answer: str) -> str:
+    """The `run.worker` the operator described, in whichever of its two forms.
+
+    The engine has exactly two: a shell string ("run this and see what
+    changed") and an `acp:` mapping ("hold a session with an agent that speaks
+    a standard"). An operator whose agent speaks ACP says so with an `acp:`
+    prefix; anything else is the command, quoted and otherwise untouched.
+
+    **Neither form is invented and neither is defaulted to.** This writes down
+    what the person said, which is the difference between generating a config
+    and guessing one.
+    """
+    if not answer.lower().startswith("acp:"):
+        return f'  worker: "{answer}"\n'
+    words = answer[len("acp:"):].strip().split()
+    block = "  worker:\n    acp:\n" + f'      command: "{words[0]}"\n'
+    if words[1:]:
+        block += "      args: [" + ", ".join(f'"{w}"' for w in words[1:]) + "]\n"
+    return block
+
+
+def needs_workspace(repo: Path) -> bool:
+    """Absence, not staleness (§9 question 3).
+
+    A `.wringer.yaml` somebody wrote is theirs. A verb that decided another
+    person's config was out of date and rewrote it would be the vibe tooling
+    this project answers.
+    """
+    from wringer import config
+
+    return not (repo / config.CONFIG_FILENAME).is_file()
+
+
+def generate_workspace(session: Session, repo: Path, answers: dict) -> None:
+    """`wring init`, then the three sections it does not write (§3a).
+
+    `wring init` is a SUBPROCESS and not an import: `cmd_init` reads
+    `Path.cwd()` and takes no target, so driving it in-process would need a
+    global `chdir` — unsafe in a verb that later runs this repository's gates
+    (finding 19). `detect` is imported only to read the FACT of which branch
+    fired, which is prose on stdout and so cannot be read any other way.
+    """
+    from wringer import config, detect
+
+    done = run_command(repo, [engine("wring"), "init"])
+    if done.returncode != 0:
+        raise Stop(stop_for("", "", engine_words=(done.stderr or "").strip()),
+                   done.returncode)
+
+    # Ruling 5, with the mechanism NAMED rather than wished for: `wring init`
+    # never stops — on empty detection it writes a placeholder gate `run:
+    # "true"` so that `wring init && wring verify` exits 0 in a repo nobody
+    # has configured. `is_untouched_template` is what recognises that state.
+    # **`is_untouched_template` takes the CONFIG's gates, not the detector's
+    # candidates**, and `Detection` has no `.gates` at all — assumed here once
+    # and corrected against the real object. The detector says what it found
+    # on disk; only the written config says what will actually run.
+    found = detect.detect(repo)
+    written = config.load(repo / config.CONFIG_FILENAME)
+    if detect.is_untouched_template(written.gates):
+        raise Stop(
+            Step(
+                kind=STOPPED,
+                id="stopped:nothing-runnable",
+                text="Nothing was built. This project has no tests or checks "
+                "that could prove the work was done, and inventing one would "
+                "prove nothing. Ask an engineer to add a test command.",
+            ),
+            exit_code=2,
+        )
+
+    path = repo / config.CONFIG_FILENAME
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + "\n"
+        + "judge:\n"
+        + f"  endpoint: {answers['endpoint']}\n"
+        + f"  model: {answers['model']}\n"
+        + f"  rubric: {DECLARED_DEFAULTS['rubric']}\n"
+        + f"  api_key_env: {DECLARED_DEFAULTS['api_key_env']}\n"
+        + f"  max_output_tokens: {DECLARED_DEFAULTS['max_output_tokens']}\n"
+        + "\n"
+        + "run:\n"
+        + _worker_block(answers["worker"])
+        + f"  max_iterations: {DECLARED_DEFAULTS['max_iterations']}\n"
+        + "\n"
+        + "deliver:\n"
+        + f"  branch: \"{DECLARED_DEFAULTS['branch']}\"\n",
+        encoding="utf-8",
+    )
+    session.emit(
+        Step(
+            kind=SHOW,
+            id="workspace",
+            text=f"I set the project up to run its own checks: "
+            f"{', '.join(g.id for g in written.gates)}. Nothing was invented "
+            f"— these come from {', '.join(found.sources) or 'this project'}, "
+            "which already declares them.",
+        )
+    )
+
+
+def draft_the_spec(session: Session, repo: Path, prd: Path) -> None:
+    """`wring spec --send`, and the cost is said BEFORE the call.
+
+    Ruling 2a: step 3's `--send` is authorised by the operator having run the
+    verb and been told a paid call is about to happen. That sentence is here,
+    before the subprocess, because after it the money is already spent.
+    """
+    from wringer import spec
+
+    if (repo / spec.SPEC_FILENAME).is_file():
+        return
+    session.emit(
+        Step(
+            kind=SHOW,
+            id="drafting",
+            text="Reading your document and drafting a plan from it. This "
+            "sends the document to the model endpoint the project declares, "
+            "which usually costs a small amount.",
+        )
+    )
+    done = run_command(
+        repo,
+        [engine("wring"), "spec", str(prd.relative_to(repo)), "--send", "--json"],
+    )
+    if done.returncode != 0:
+        raise Stop(stop_for("", "", engine_words=(done.stderr or "").strip()),
+                   done.returncode)
 
 
 # --- step 4: the interview --------------------------------------------------

@@ -123,8 +123,36 @@ def _run(session: run_module.Session, args) -> int:
     repo = session.repo
 
     # Step 0 — bring the PRD inside, and say so.
-    run_module.bring_prd_inside(session, Path(args.prd).resolve())
+    inside = run_module.bring_prd_inside(session, Path(args.prd).resolve())
     _render(session.steps[-1:], mode)
+
+    # Step 2 — the workspace, only when there is none. The three things DRIVE
+    # may not invent are ASKED for: an endpoint is a network address, a model
+    # is a bill, and a worker is a command. Ruling 5 forbids guessing any of
+    # them, and asking is the one thing this verb is built to do.
+    if run_module.needs_workspace(repo):
+        answers = {}
+        for question in run_module.SETUP_QUESTIONS:
+            said = _ask(question, mode)
+            if not said:
+                raise run_module.Stop(
+                    run_module.Step(
+                        kind="stopped",
+                        id="stopped:setup-unanswered",
+                        text="Nothing was set up, because this needs an "
+                        "answer that only you can give.",
+                        question=question.text,
+                    ),
+                    exit_code=2,
+                )
+            answers[question.detail["key"]] = said
+        run_module.generate_workspace(session, repo, answers)
+        _render(session.steps[-1:], mode)
+
+    # Step 3 — draft the spec from the prose, saying what it costs first.
+    run_module.draft_the_spec(session, repo, inside)
+    if session.steps[-1].id == "drafting":
+        _render(session.steps[-1:], mode)
 
     # Step 4 — the interview. One question at a time, in the drafter's words.
     for step in run_module.questions_to_ask(repo):

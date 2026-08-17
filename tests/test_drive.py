@@ -588,6 +588,43 @@ def test_every_sentence_drive_emits_came_from_the_board_or_the_engine():
                 )
 
 
+def test_BOTH_TRANSPORTS_INSTALL_BYTE_IDENTICAL_GATES(proposing, tmp_path, capsys):
+    """**Driven both ways, with a byte-identical result** — through step 7.
+
+    The terminal is a layout of the same `Step` objects, not a second
+    implementation, so what a person's run WRITES must equal what an agent's
+    run writes. This drives the same project twice from the same state and
+    compares the file §3a lets DRIVE touch, byte for byte.
+
+    Steps 0-6 were filmed this way already; this is the half that installs a
+    gate, which is the half where a divergence would change what "verified"
+    means for the repository.
+    """
+    import io
+    import shutil
+    import sys
+
+    config = pytest.importorskip("wringer.config")
+    written = {}
+    for transport in ("text", "json"):
+        clone = tmp_path / f"clone-{transport}"
+        shutil.copytree(proposing, clone)
+        sys.stdin = io.StringIO("yes\nyes\n")
+        try:
+            main(["run", str(prd(tmp_path)), "--repo", str(clone),
+                  "--emit", transport])
+        finally:
+            sys.stdin = sys.__stdin__
+        written[transport] = (clone / config.CONFIG_FILENAME).read_bytes()
+        capsys.readouterr()
+
+    assert written["text"] == written["json"], (
+        "the two front doors installed different gates — they have drifted "
+        "into two products with two vocabularies"
+    )
+    assert b"acc-exports-csv" in written["text"], "neither installed anything"
+
+
 def test_the_terminal_and_the_json_carry_the_SAME_text():
     """The fallback is a layout, not a second wording. That is the only reason
     the two front doors cannot drift into two products."""
