@@ -22,9 +22,24 @@ wringer-drive = "wringer_drive.__main__:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.pytest.ini_options]
+# **`tests` only, and `examples/` is the reason.** `examples/pipeline/project`
+# is a whole separate project with its own suite, shipped as plain files so
+# `setup.sh` can make a real repository out of it. Without this, this package's
+# own `pytest -q` walks into it, tries to collect tests for a `pipeline` module
+# that is not installed here, and dies with five collection errors before
+# running a single test of its own. Found by running it.
+#
+# The example's suite is not skipped: `test_the_acceptance_check_is_RED_and_the
+# _suite_is_GREEN` runs it deliberately, in a copy, and asserts both colours.
+testpaths = ["tests"]
+
 [tool.ruff]
 line-length = 88
 target-version = "py311"
+# Same reason: the example is another project's source, held to its own
+# line-length and its own rules, not to this package's.
+extend-exclude = ["examples/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]

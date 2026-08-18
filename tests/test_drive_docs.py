@@ -599,3 +599,86 @@ def test_the_readme_tells_a_stranger_how_to_install_every_dependency():
         + ". Neither sibling is on PyPI, so `pip install -e .` alone fails "
         "with a resolver error — which is the first thing a stranger meets"
     )
+
+
+# --- the example a stranger is told to run ----------------------------------
+#
+# `examples/pipeline/` is the first thing anybody who is not me will run, and
+# its whole value rests on one fact being true of the copy they get: the
+# project's own suite is GREEN and the acceptance check is RED. If that ever
+# stops being true the example still "works" — it just quietly stops
+# demonstrating anything, which is the failure mode this programme keeps
+# finding.
+
+EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "pipeline"
+
+
+def test_the_example_ships_the_files_its_setup_script_copies():
+    """Derived from the script, not from a list kept beside it."""
+    script = (EXAMPLE / "setup.sh").read_text(encoding="utf-8")
+    for named in ("$HERE/project", "$HERE/PRD.md"):
+        assert named in script, named
+    assert (EXAMPLE / "project").is_dir()
+    assert (EXAMPLE / "PRD.md").is_file()
+    assert (EXAMPLE / "project" / "acceptance" / "test_skip_downstream.py").is_file()
+
+
+def test_the_examples_project_is_NOT_a_git_repository():
+    """A repository inside a repository is a submodule nobody asked for, and
+    `setup.sh` is what makes the real one."""
+    assert not (EXAMPLE / "project" / ".git").exists()
+
+
+def test_the_acceptance_check_is_RED_and_the_suite_is_GREEN(tmp_path):
+    """**The fact the whole example rests on, measured rather than asserted.**
+
+    Run against the shipped files, in a copy, with this suite's own
+    interpreter. `pytest -q` is scoped by the project's `testpaths` to
+    `tests/`, so the acceptance directory is deliberately outside it.
+    """
+    import shutil
+    import subprocess
+    import sys
+
+    project = tmp_path / "project"
+    shutil.copytree(EXAMPLE / "project", project)
+
+    def run(*args):
+        return subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", *args],
+            cwd=project, capture_output=True, text=True, check=False,
+        )
+
+    green = run()
+    assert green.returncode == 0, (
+        "the example's own suite is not green at the start, so the example "
+        f"demonstrates nothing:\n{green.stdout[-2000:]}"
+    )
+    red = run("acceptance/test_skip_downstream.py")
+    assert red.returncode != 0, (
+        "the acceptance check PASSES against the shipped project. The example "
+        "claims it is red until the feature is built, and a check that is "
+        "green at the start cannot show the difference the work makes"
+    )
+
+
+def test_the_setup_script_refuses_to_overwrite_something_of_yours():
+    """The failure path, because a setup script that clobbers a directory is
+    the one thing a stranger cannot forgive."""
+    script = (EXAMPLE / "setup.sh").read_text(encoding="utf-8")
+    assert 'if [ -e "$TARGET" ]' in script
+    assert "already exists" in script
+
+
+def test_the_example_readme_does_not_promise_a_delivered_handover():
+    """Q1's ceiling, and the specific over-claim available here: this example
+    ends in a REFUSAL, and a README promising a merge request would be
+    describing a run nobody has had."""
+    readme = (EXAMPLE / "README.md").read_text(encoding="utf-8").lower()
+    for phrase in ("merge request is opened", "delivers the change",
+                   "hands it over automatically"):
+        assert phrase not in readme, phrase
+    assert "refuses" in readme, (
+        "the README does not tell the reader the run ends in a refusal, which "
+        "is the ending they will actually get"
+    )
