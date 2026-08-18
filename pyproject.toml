@@ -39,7 +39,14 @@ line-length = 88
 target-version = "py311"
 # Same reason: the example is another project's source, held to its own
 # line-length and its own rules, not to this package's.
-extend-exclude = ["examples/"]
+#
+# `.engine/` and `.board/` are the sibling repositories CI checks out INSIDE
+# this working directory so the imports this package makes are real ones. They
+# are other projects too. Excluded here rather than by narrowing the command,
+# so `ruff check .` means the same thing on a laptop and on a runner — CI ran
+# it once against the engine's `benchmark/` and reported 41 errors in code this
+# repository does not own.
+extend-exclude = ["examples/", ".engine/", ".board/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]

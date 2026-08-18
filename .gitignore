@@ -4,3 +4,8 @@ __pycache__/
 .venv/
 build/
 dist/
+
+# The sibling checkouts CI makes INSIDE this working directory so the imports
+# this package makes are real ones. Never ours to commit.
+.engine/
+.board/
