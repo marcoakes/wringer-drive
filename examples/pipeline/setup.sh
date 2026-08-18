@@ -96,7 +96,7 @@ Two things to do, both in THIS terminal window:
 
 When it asks which coding agent should do the building, the answer is:
 
-  acp: claude-code-acp
+  acp: claude-agent-acp
 
 For the endpoint and the model:
 

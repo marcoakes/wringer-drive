@@ -830,3 +830,42 @@ def test_no_example_prd_names_a_source_file(name):
         f"{name}/PRD.md names {sorted(set(offenders))} — the guide it is cited "
         f"in says a requirement names no files"
     )
+
+
+def test_no_document_names_the_deprecated_acp_adapter():
+    """**Shipped stale for a week, and a field run installed it.**
+
+    `@zed-industries/claude-code-acp` was deprecated and renamed to
+    `@agentclientprotocol/claude-agent-acp`; the engine's own
+    `docs/MANUAL_CHECKS.md` recorded that on 2026-08-11. The name was copied
+    into this package's front door anyway on 2026-08-18 and a product manager
+    installed it on that instruction. The deprecated adapter answers an
+    unauthenticated turn with an empty *result*, which a client cannot tell
+    from a turn that simply did nothing — so the failure presented as a hang.
+
+    Derived over every document and script here, not a spot check.
+    """
+    stale = "claude-code-acp"
+    offenders = []
+    for path in list(ROOT.rglob("*.md")) + list(ROOT.rglob("*.sh")):
+        if ".engine" in path.parts or ".board" in path.parts:
+            continue
+        body = path.read_text(encoding="utf-8", errors="replace")
+        if stale in body:
+            offenders.append(str(path.relative_to(ROOT)))
+    assert not offenders, (
+        f"{offenders} name the deprecated adapter; it is "
+        f"`claude-agent-acp` from `@agentclientprotocol/claude-agent-acp`"
+    )
+
+
+def test_the_front_door_warns_that_the_build_can_stall_silently():
+    """The most serious thing a first-time reader can hit, and it is live.
+
+    A page that sent somebody into a fifteen-minute silence without saying so
+    would be repeating the exact failure the field run reported.
+    """
+    body = (ROOT / "START-HERE.md").read_text(encoding="utf-8").lower()
+    assert "stall" in body, "the front door does not warn about the stall"
+    assert "ctrl+c" in body, "it does not say what to do about it"
+    assert "authenticate" in body, "it does not name the cause"

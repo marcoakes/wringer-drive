@@ -36,8 +36,8 @@ Rules I am asking you to follow, and please tell me if any of them stop you:
    If `wring`, `wringer-board` and `wringer-drive` are not on my PATH afterwards, run `uv tool update-shell` and tell me to open a new terminal.
 
 4. Install the adapter that lets Wringer drive Claude Code as the coding agent:
-     npm install -g @zed-industries/claude-code-acp
-   Then confirm the command `claude-code-acp` is on my PATH.
+     npm install -g @agentclientprotocol/claude-agent-acp
+   Then confirm the command `claude-agent-acp` is on my PATH.
 
 5. Set up the example, and show me everything it prints:
      cd wringer-drive/examples/pipeline
@@ -86,11 +86,26 @@ It will ask you about ten questions. Three answers you will need:
 |---|---|
 | which model endpoint | `https://api.anthropic.com/v1/chat/completions` |
 | which model | `claude-opus-5` |
-| which coding agent should do the building | `acp: claude-code-acp` |
+| which coding agent should do the building | `acp: claude-agent-acp` |
 
 Everything else is a product question and you are the person who answers it.
 Then **open `board.html`**. [What you are looking at](docs/ENDINGS.md) explains
 the four ways this can end.
+
+> ### ⚠️ Known gap: the build step may stall with nothing on screen
+>
+> On a field run on 2026-08-18 the run reached the build and then sat silent.
+> Reproduced since: the coding agent could not **authenticate**, and neither it
+> nor Wringer said so. Wringer hands a worker only `PATH`, `HOME` and `LANG`, and
+> depending on how your Claude Code is signed in, that may not be enough.
+>
+> **If nothing has happened for a couple of minutes**, it has probably stalled
+> rather than gone quiet. Press Ctrl+C — nothing is lost, and no source file of
+> yours will have been touched. Then tell us, because we still do not know how
+> many machines this affects.
+>
+> Wringer's own guard would eventually stop it, but not for **fifteen minutes**,
+> which is far too long to sit looking at a blank screen.
 
 ---
 
