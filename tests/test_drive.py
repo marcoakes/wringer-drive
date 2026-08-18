@@ -920,3 +920,37 @@ def test_the_setup_step_names_where_the_key_has_to_be(project, tmp_path, capsys)
     # Derived, not typed: whatever the generated config names is what is said.
     generated = (project / config.CONFIG_FILENAME).read_text(encoding="utf-8")
     assert run_module.DECLARED_DEFAULTS["api_key_env"] in generated
+
+
+@pytest.mark.parametrize(
+    "key", ["rubric", "api_key_env", "max_output_tokens", "branch", "timeout"]
+)
+def test_every_declared_default_reaches_the_generated_file(
+    key, project, tmp_path, capsys
+):
+    import io
+    import sys
+
+    config = pytest.importorskip("wringer.config")
+    (project / config.CONFIG_FILENAME).unlink()
+    (project / "pyproject.toml").write_text(
+        '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n'
+        "\n[tool.ruff]\nline-length = 100\n",
+        encoding="utf-8",
+    )
+    sys.stdin = io.StringIO("http://127.0.0.1:1/v1/chat/completions\nnone\ntrue\n")
+    try:
+        main(["run", str(prd(tmp_path)), "--repo", str(project)])
+    finally:
+        sys.stdin = sys.__stdin__
+    capsys.readouterr()
+
+    written = (project / config.CONFIG_FILENAME).read_text(encoding="utf-8")
+    value = str(run_module.DECLARED_DEFAULTS[key])
+    assert value in written, (
+        f"DRIVE declares {key}={value} and never writes it into the config it "
+        f"generates, so the default it decided on does not exist"
+    )
+    # And the ENGINE agrees it is a real key rather than one this package made up.
+    loaded = config.load(project / config.CONFIG_FILENAME)
+    assert loaded.judge is not None

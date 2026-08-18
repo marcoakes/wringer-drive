@@ -197,7 +197,18 @@ DECLARED_DEFAULTS = {"rubric": "wringer.rubric.yaml", "max_iterations": 2,
                      # live endpoint before this number was written down.
                      # A truncated draft is not a smaller draft: `wring spec`
                      # refuses the whole reply and writes nothing.
-                     "max_output_tokens": 8000}
+                     "max_output_tokens": 8000,
+                     # The engine's own default is 120 seconds, and a real
+                     # PRD's drafting call does not reliably fit in it —
+                     # measured on 2026-08-19, three drives of one document
+                     # took 47s, 50s and 56s, and a fourth was still going at
+                     # 120s and was cut off. The operator then loses the whole
+                     # call, having paid for it, to a message about seconds.
+                     #
+                     # This is a CEILING on waiting, not a promise of speed.
+                     # Nothing here makes drafting slower; it stops a slow one
+                     # being thrown away.
+                     "timeout": 600}
 
 SETUP_QUESTIONS = (
     Step(kind=ASK, id="setup:endpoint",
@@ -296,6 +307,7 @@ def generate_workspace(session: Session, repo: Path, answers: dict) -> None:
         + f"  rubric: {DECLARED_DEFAULTS['rubric']}\n"
         + f"  api_key_env: {DECLARED_DEFAULTS['api_key_env']}\n"
         + f"  max_output_tokens: {DECLARED_DEFAULTS['max_output_tokens']}\n"
+        + f"  timeout: {DECLARED_DEFAULTS['timeout']}\n"
         + "\n"
         + "run:\n"
         + _worker_block(answers["worker"])

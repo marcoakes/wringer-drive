@@ -610,7 +610,75 @@ def test_the_readme_tells_a_stranger_how_to_install_every_dependency():
 # demonstrating anything, which is the failure mode this programme keeps
 # finding.
 
-EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "pipeline"
+EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
+EXAMPLE = EXAMPLES / "pipeline"
+
+# Every example, so a second one cannot be added without meeting the same bar.
+# `red` is the acceptance check that must fail, and `green` is the command that
+# must pass, as the example's own README tells a reader to run them.
+ALL_EXAMPLES = (
+    ("pipeline", ["-m", "pytest", "-q"],
+     ["-m", "pytest", "-q", "acceptance/test_skip_downstream.py"]),
+    ("arcade", ["--test", "tests/catalogue.test.js", "tests/cabinet.test.js"],
+     ["--test", "acceptance/recently-played.test.js"]),
+)
+
+
+@pytest.mark.parametrize("name", [name for name, _, _ in ALL_EXAMPLES])
+def test_every_example_ships_a_setup_script_that_refuses_a_broken_copy(name):
+    script = (EXAMPLES / name / "setup.sh").read_text(encoding="utf-8")
+    assert 'if [ -e "$TARGET" ]' in script, f"{name} would overwrite a directory"
+    assert "PASSES already, and it must not" in script, (
+        f"{name}'s setup does not check that its acceptance check is red, so it "
+        f"can hand over a copy that demonstrates nothing"
+    )
+    assert (EXAMPLES / name / "PRD.md").is_file()
+    assert not (EXAMPLES / name / "project" / ".git").exists()
+
+
+@pytest.mark.parametrize("name,green,red", ALL_EXAMPLES)
+def test_every_example_is_GREEN_where_it_claims_and_RED_where_it_claims(
+    name, green, red, tmp_path
+):
+    """**The fact every example rests on, measured rather than asserted.**
+
+    Run against the shipped files, in a copy. The arcade needs `node`; where it
+    is absent this SKIPS with the claim it could not check named out loud,
+    rather than passing quietly.
+    """
+    import shutil
+    import subprocess
+    import sys
+
+    source = EXAMPLES / name / "project"
+    if not source.is_dir():
+        source = EXAMPLES / name
+    work = tmp_path / name
+    shutil.copytree(source, work)
+
+    runner = sys.executable if green[0] == "-m" else "node"
+    if runner == "node" and shutil.which("node") is None:
+        pytest.skip(
+            f"node is not installed, so THE CENTRAL CLAIM of the {name} example "
+            "is UNCHECKED here: that its own suite is green and its acceptance "
+            "check is red"
+        )
+
+    passed = subprocess.run(
+        [runner, *green], cwd=work, capture_output=True, text=True, check=False
+    )
+    assert passed.returncode == 0, (
+        f"the {name} example's own suite is not green at the start, so it "
+        f"demonstrates nothing:\n{(passed.stdout + passed.stderr)[-2000:]}"
+    )
+    failed = subprocess.run(
+        [runner, *red], cwd=work, capture_output=True, text=True, check=False
+    )
+    assert failed.returncode != 0, (
+        f"the {name} example's acceptance check PASSES against the shipped "
+        "project. It claims to be red until the feature is built, and a check "
+        "that is green at the start cannot show the difference the work makes"
+    )
 
 
 def test_the_example_ships_the_files_its_setup_script_copies():
