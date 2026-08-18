@@ -750,3 +750,83 @@ def test_the_example_readme_does_not_promise_a_delivered_handover():
         "the README does not tell the reader the run ends in a refusal, which "
         "is the ending they will actually get"
     )
+
+# --- the PM front door, and the pages it sends people to --------------------
+
+ROOT = Path(__file__).resolve().parent.parent
+PM_PAGES = ("START-HERE.md", "docs/ENDINGS.md",
+            "docs/WRITING-A-REQUIREMENT.md", "examples/README.md")
+
+
+@pytest.mark.parametrize("page", PM_PAGES)
+def test_every_pm_page_links_only_to_pages_that_exist(page):
+    """A dead link on the first page somebody reads is the cheapest possible
+    way to lose them."""
+    import re
+
+    path = ROOT / page
+    body = path.read_text(encoding="utf-8")
+    targets = re.findall(r"\]\((?!https?:)([^)#]+)", body)
+    if page == "START-HERE.md":
+        assert targets, "no relative links found, so this checks nothing"
+    for target in targets:
+        assert (path.parent / target).exists(), f"{page} links to {target}"
+
+
+@pytest.mark.parametrize("page", PM_PAGES)
+def test_no_pm_page_promises_containment_it_does_not_have(page):
+    """**Q1's ceiling on the pages a stranger reads FIRST.**
+
+    Driving with one verb runs the coding agent uncontained and there is no
+    channel to change that. Of every over-claim available here this is the one
+    that could actually cost somebody something.
+    """
+    body = (ROOT / page).read_text(encoding="utf-8").lower()
+    for phrase in ("sandboxed", "safely isolated", "runs securely",
+                   "cannot touch your", "in a container"):
+        assert phrase not in body, f"{page} claims {phrase!r}"
+
+
+def test_the_front_door_says_out_loud_that_the_agent_is_uncontained():
+    """The other direction, because a page that merely avoids the word would
+    pass the test above while telling the reader nothing."""
+    body = (ROOT / "START-HERE.md").read_text(encoding="utf-8").lower()
+    assert "does not sandbox your agent" in body, (
+        "the front door never tells the reader their agent runs with their own "
+        "access"
+    )
+
+
+def test_the_front_door_never_tells_a_pm_to_paste_a_key_into_an_agent():
+    body = (ROOT / "START-HERE.md").read_text(encoding="utf-8")
+    assert "not in your agent" in body
+    assert "sk-ant" in body, "it never says which secret is actually wanted"
+
+
+def test_the_examples_listing_names_every_example_that_exists():
+    """A listing that goes stale is worse than none: a reader trusts it to be
+    complete. Derived from `ALL_EXAMPLES`, which is itself checked against the
+    shipped files above."""
+    listed = (EXAMPLES / "README.md").read_text(encoding="utf-8")
+    for name, _, _ in ALL_EXAMPLES:
+        assert f"{name}/" in listed, (
+            f"examples/{name} exists and examples/README.md does not mention it"
+        )
+
+
+@pytest.mark.parametrize("name", [name for name, _, _ in ALL_EXAMPLES])
+def test_no_example_prd_names_a_source_file(name):
+    """Rule 2 of the requirement guide, applied to the two documents it cites
+    as evidence. A PRD naming a module is a product manager making an
+    engineering decision, and these two are held up as how to avoid that.
+    """
+    import re
+
+    prd = (EXAMPLES / name / "PRD.md").read_text(encoding="utf-8")
+    offenders = re.findall(
+        r"\b[\w/-]+\.(?:py|js|mjs|ts|json|html|yaml|toml)\b", prd
+    )
+    assert not offenders, (
+        f"{name}/PRD.md names {sorted(set(offenders))} — the guide it is cited "
+        f"in says a requirement names no files"
+    )

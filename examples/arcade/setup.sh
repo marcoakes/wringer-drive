@@ -32,10 +32,7 @@ mkdir -p "$TARGET"
 TARGET=$(cd "$TARGET" && pwd)
 
 echo "→ copying the cabinet into $TARGET/project"
-mkdir -p "$TARGET/project"
-for item in index.html package.json README.md src tests acceptance scripts games; do
-    cp -R "$HERE/$item" "$TARGET/project/"
-done
+cp -R "$HERE/project" "$TARGET/project"
 cp "$HERE/PRD.md" "$TARGET/PRD.md"
 
 echo "→ making it a git repository with a bare origin on local disk"

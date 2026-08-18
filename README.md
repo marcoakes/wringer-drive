@@ -2,6 +2,12 @@
 
 **One verb. A document in, a page out.**
 
+> ### 👉 New here, and not an engineer? [**START HERE**](START-HERE.md)
+>
+> Five steps, about ten minutes to seeing it work: install it, run a worked
+> example, find out which of your own repositories it can help with, write a
+> requirement, drive it.
+
 ```
 wringer-drive run PRD.md
 ```

@@ -1,0 +1,53 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # **This repository had NO CI until 2026-08-19.** Its tests hold two things
+  # nothing else does: that no PM-facing sentence is written by this package
+  # rather than by the board, and that both worked examples really are green
+  # where they claim and red where they claim.
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Both siblings, as checkouts. This package imports the engine and the
+      # board as libraries — the permitted symbols are a named list — so a run
+      # without them tests almost nothing here.
+      - uses: actions/checkout@v4
+        with:
+          repository: marcoakes/wringer
+          path: .engine
+      - uses: actions/checkout@v4
+        with:
+          repository: marcoakes/wringer-board
+          path: .board
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # **Node, because one of the two examples is JavaScript.** Its guard
+      # runs the example's own suite and its acceptance check and asserts the
+      # two colours; without node it SKIPS, saying which claim went unchecked,
+      # and this job exists to stop that being invisible.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - run: pip install -e '.[dev]' -e ./.engine -e ./.board
+
+      - name: Run pytest, and refuse to be quietly skipped
+        run: |
+          set -o pipefail
+          pytest -q -rs 2>&1 | tee /tmp/pytest.log
+          if grep -q "is UNCHECKED here" /tmp/pytest.log; then
+            echo "::error title=an example was not verified::a guard skipped because a runtime was missing, so an example's green/red claim is unchecked"
+            exit 1
+          fi
+
+      - run: ruff check .
