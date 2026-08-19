@@ -113,7 +113,12 @@ fails, stop and show them the real error before doing anything else.
 ## Driving `wringer-drive run --emit json`
 
 Start the run with the inline-key command from law 3, from the project
-directory. Then:
+directory — substituting the document's real path. For the worked example the
+document sits one level ABOVE the project, so the command names `../PRD.md`,
+not `PRD.md`. The example's setup also prints an epilogue addressed to a
+person at a terminal ("two things to do, both in THIS terminal window"): on
+this path those steps are YOURS, done with the inline key and `--emit json`,
+and the person types nothing. Then:
 
 - **Read one JSON object per line from stdout.** Each is a step:
   `{"schema_version": "wringer.drive.v1", "kind": ..., "id": ..., "text": ...}`
