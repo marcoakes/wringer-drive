@@ -49,6 +49,34 @@ them, and do not put it in a file, a shell export, or your own context.
 
 ---
 
+## Changing their mind — the revision flow
+
+The plan carries a block headed **DECIDED WITHOUT ASKING YOU**. Those are
+decisions the drafter took on the person's behalf rather than asking, each
+shown with the question it replaced. **Relay that block verbatim, like every
+other step** — it is the part of the plan they are least likely to expect and
+most likely to disagree with, and approving the plan approves all of it.
+
+If they want something changed — an answer they gave, or a decision that was
+taken for them — run:
+
+```bash
+wringer-board revise --id <the id> --text "<what they said>"
+```
+
+**Every revision withdraws their approval**, on purpose: the plan is re-rendered
+and they approve again, having read it. Tell them that is what happened; a
+person who thinks they are still approved and is not will read the next refusal
+as a fault.
+
+**Law 2 governs this too.** The revision is the human's to ask for. You never
+volunteer one, never decide what they "probably meant", and never revise to
+make a refusal go away. If they have not asked for a change, there is no
+change. An agent that revises on the person's behalf is the same defect as an
+agent that answers a `confirm`, wearing a different coat.
+
+---
+
 ## Install — gate each step with `wring doctor`
 
 Work in a folder the person chooses. No `sudo`; no system settings; if a step
