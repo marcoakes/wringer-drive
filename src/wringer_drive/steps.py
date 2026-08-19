@@ -56,7 +56,10 @@ class Step:
     """One thing DRIVE needs a person to see, answer or decide.
 
     `text` is ALWAYS verbatim from the engine or the board. `id` is what a
-    driver echoes back with the answer, so nothing is matched on prose.
+    driver ROUTES on, so nothing is matched on prose. It is never echoed
+    back: an answer on stdin is one line of plain text and nothing else —
+    the sentence here used to claim an echo convention no reader
+    implemented, and AGENTS.md documents the contract that actually runs.
     """
 
     kind: str

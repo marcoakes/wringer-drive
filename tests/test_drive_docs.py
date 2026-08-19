@@ -754,7 +754,7 @@ def test_the_example_readme_does_not_promise_a_delivered_handover():
 # --- the PM front door, and the pages it sends people to --------------------
 
 ROOT = Path(__file__).resolve().parent.parent
-PM_PAGES = ("START-HERE.md", "docs/ENDINGS.md",
+PM_PAGES = ("START-HERE.md", "AGENTS.md", "docs/ENDINGS.md",
             "docs/WRITING-A-REQUIREMENT.md", "examples/README.md")
 
 
@@ -869,3 +869,92 @@ def test_the_front_door_warns_that_the_build_can_stall_silently():
     assert "stall" in body, "the front door does not warn about the stall"
     assert "ctrl+c" in body, "it does not say what to do about it"
     assert "authenticate" in body, "it does not name the cause"
+
+
+# --- the agent runbook, which R5 made the real front door --------------------
+
+
+def agents_md() -> str:
+    return (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+
+
+def test_the_agent_runbook_states_the_three_transport_laws_as_laws():
+    """**R5's three laws, greppable, because each one was violated or nearly
+    violated somewhere already:** paraphrase is the drift SPEC_BOARD ruling 1
+    exists for; an agent that answers a confirm itself is the interlock
+    laundered; and a key an agent has seen is a key in a transcript.
+    """
+    body = flattened(agents_md()).lower()
+    assert "verbatim" in body, "law 1 (relay verbatim) is not stated"
+    assert "never answers" in body, (
+        "law 2 (a confirm is the human's — the agent never answers yes "
+        "itself) is not stated"
+    )
+    assert "inline" in body, (
+        "law 3 (the key is read inline by the run command; the agent never "
+        "sees it) is not stated"
+    )
+    assert "security find-generic-password" in agents_md(), (
+        "the runbook never shows the inline Keychain read the law requires"
+    )
+
+
+def test_the_agent_runbook_documents_the_protocol_the_code_implements():
+    """The runbook says one object per line OUT and one line per answer IN —
+    the contract `_ask`/`_read_line` really implement. An id-echo convention
+    appeared in a docstring once with no reader behind it; the runbook may
+    not repeat it."""
+    body = flattened(agents_md()).lower()
+    assert "one json object per line" in body
+    assert "--emit json" in agents_md()
+    assert "one line" in body, "how an answer goes back is never said"
+
+
+def test_the_agent_runbook_and_the_questions_offer_the_same_documented_values():
+    """**Finding 8: the endpoint question offered nothing to a person with no
+    way to know.** The three setup questions now carry their documented
+    example values IN the question text — and this pins the runbook and the
+    questions to the SAME values, because two documents describing one fact
+    is the drift this suite keeps refusing. The person still answers;
+    nothing is defaulted silently."""
+    runbook = agents_md()
+    for question in run_module.SETUP_QUESTIONS:
+        suggested = question.detail.get("suggested")
+        assert suggested, (
+            f"{question.id} offers no documented value in its detail"
+        )
+        assert suggested in question.text, (
+            f"{question.id} does not offer its documented value in the "
+            f"question text itself: {question.text!r}"
+        )
+        assert suggested in runbook, (
+            f"{question.id}'s documented value {suggested!r} is not the one "
+            f"AGENTS.md documents"
+        )
+
+
+def test_the_endpoint_question_says_where_the_key_goes():
+    """R5.4: the key is sent to whatever URL is entered, said AT the question
+    — the one moment the person is choosing the URL."""
+    endpoint = next(
+        q for q in run_module.SETUP_QUESTIONS if q.detail["key"] == "endpoint"
+    )
+    text = " ".join(endpoint.text.split()).lower()
+    assert "key" in text and "whatever" in text, (
+        "the endpoint question never says the key goes to the URL entered: "
+        f"{endpoint.text!r}"
+    )
+
+
+def test_start_here_is_one_screen_and_hands_everything_else_to_the_agent():
+    """**R5.1: two acts — paste one block into your agent, store your key.**
+    A page a PM must scroll through is a page they will half-read; the PhD
+    stays in AGENTS.md, where the reader is software. Fifty-five lines is a
+    screen with room to breathe; the old page was three times that."""
+    body = (ROOT / "START-HERE.md").read_text(encoding="utf-8")
+    assert len(body.splitlines()) <= 55, (
+        f"START-HERE.md is {len(body.splitlines())} lines — no longer one "
+        "screen; the detail belongs in AGENTS.md"
+    )
+    assert "AGENTS.md" in body, "the paste block never points the agent at it"
+    assert "add-generic-password" in body, "the key act is missing"

@@ -211,19 +211,28 @@ DECLARED_DEFAULTS = {"rubric": "wringer.rubric.yaml", "max_iterations": 2,
                      # being thrown away.
                      "timeout": 600}
 
+# Each question OFFERS its documented example value in the question text —
+# asking with no suggestion was field-run finding 8 — and the person still
+# answers: an empty answer stops the run, never falls back to the suggestion.
+# The values are the ones AGENTS.md documents, and a guard holds the two
+# to the same strings.
 SETUP_QUESTIONS = (
     Step(kind=ASK, id="setup:endpoint",
          text="Which model endpoint should read your document and draft the "
-              "plan? Paste the URL your team uses.",
-         detail={"key": "endpoint"}),
+              "plan? Paste the URL your team uses — for the worked example "
+              "it is https://api.anthropic.com/v1/chat/completions. Your "
+              "API key will be sent to whatever URL you enter here.",
+         detail={"key": "endpoint",
+                 "suggested": "https://api.anthropic.com/v1/chat/completions"}),
     Step(kind=ASK, id="setup:model",
          text="Which model should it use? (a name, like the one on your "
-              "team's API page)",
-         detail={"key": "model"}),
+              "team's API page — the worked example uses claude-opus-5)",
+         detail={"key": "model", "suggested": "claude-opus-5"}),
     Step(kind=ASK, id="setup:worker",
          text="Which coding agent should do the building? Give the command "
-              "that starts it.",
-         detail={"key": "worker"}),
+              "that starts it — the worked example uses "
+              "acp: claude-agent-acp.",
+         detail={"key": "worker", "suggested": "acp: claude-agent-acp"}),
 )
 
 
