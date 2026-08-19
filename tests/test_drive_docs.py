@@ -1076,3 +1076,42 @@ def test_the_runbook_only_names_verbs_the_tools_actually_have():
                 "above; a runbook that names one that does not exist fails on "
                 "its own first instruction"
             )
+
+
+def test_the_capture_harness_never_reports_emptiness_SILENTLY():
+    """**A tool used to check for silence must not be silent itself.**
+
+    `tools/acp_model_agent.py` is the model-backed ACP worker that produced
+    the measurements the PM-plan work rests on. It had three paths that
+    returned an empty file list without a word — no JSON in the reply, no
+    `files` key, and entries dropped for having no `path` — and downstream an
+    empty list is indistinguishable from a worker that looked and found
+    nothing to change, which is what `no_progress` means.
+
+    So it carried the exact silent-emptiness class that this programme spent
+    a window removing from the engine, in the harness used to measure it."""
+    import ast
+
+    source = (ROOT / "tools" / "acp_model_agent.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    bare = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        body = list(ast.walk(node))
+        for index, inner in enumerate(body):
+            if not isinstance(inner, ast.Return):
+                continue
+            value = inner.value
+            if isinstance(value, ast.List) and not value.elts:
+                # An empty-list return must be preceded by something that says
+                # so. Checked on the enclosing function's source, not on the
+                # statement alone, because the print sits above the return.
+                segment = ast.get_source_segment(source, node) or ""
+                if "file=sys.stderr" not in segment:
+                    bare.append(f"{node.name}:{inner.lineno}")
+    assert not bare, (
+        f"these return an empty list with nothing said: {bare}. Downstream "
+        "that is indistinguishable from 'the worker found nothing to change'"
+    )
