@@ -290,6 +290,13 @@ def _run(session: run_module.Session, args) -> int:
     session.emit(approved)
     _render([approved], mode)
 
+    # **The board is re-rendered at each phase boundary, not only at the end.**
+    # A run takes minutes and the page is the person's only window into it; a
+    # board written once, last, is a page not worth opening while the thing it
+    # describes is happening. Rendering is idempotent and reads bytes already
+    # on disk, so an extra pass costs a file write and no engine work.
+    run_module.render_board(repo)
+
     # Step 7 — the proposed gates, as a diff, INSTALLED only on a yes (§3a).
     # The diff is rendered by this process before the question is asked, for
     # the same reason the plan is: the interlock is that a person SAW it.
@@ -319,6 +326,10 @@ def _run(session: run_module.Session, args) -> int:
         nothing = run_module.nothing_to_install_step(proposal)
         session.emit(nothing)
         _render([nothing], mode)
+
+    # The second phase boundary: the gates are settled, so the board can now
+    # say which requirements have a check bound to them.
+    run_module.render_board(repo)
 
     # Step 8 — the loop, with the worker the project declares.
     for step in run_module.build_steps(repo):

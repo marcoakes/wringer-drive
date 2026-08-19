@@ -1216,3 +1216,31 @@ def test_every_declared_default_reaches_the_generated_file(
     # And the ENGINE agrees it is a real key rather than one this package made up.
     loaded = config.load(project / config.CONFIG_FILENAME)
     assert loaded.judge is not None
+
+
+def test_the_board_is_written_at_each_PHASE_BOUNDARY_not_only_at_the_end():
+    """**A run takes minutes and the page is the person's only window into
+    it.** A board written once, at the end, is a page not worth opening while
+    the thing it describes is still happening. Rendering is idempotent and
+    reads bytes already on disk, so the extra passes cost a file write and no
+    engine work.
+
+    Counted rather than asserted-once, because the failure mode is "it still
+    renders, just not until the end" — which a presence check cannot see."""
+    from wringer_drive import __main__ as drive_main
+
+    source = Path(drive_main.__file__).read_text(encoding="utf-8")
+
+    # The call sites are what this guard is about; driving a whole run here
+    # would test the harness rather than the boundaries.
+    assert source.count("run_module.render_board(repo)") >= 4, (
+        "the board is rendered fewer times than there are phase boundaries — "
+        "after approval, after the gates settle, and at the ending"
+    )
+    after_approval = source.index('id="approved"')
+    after_gates = source.index("Step 8 — the loop")
+    first = source.index("run_module.render_board(repo)", after_approval)
+    assert first < after_gates, (
+        "nothing renders the board between approval and the build; the page "
+        "is blank for the longest phase of the run"
+    )
