@@ -801,6 +801,14 @@ def test_the_front_door_never_tells_a_pm_to_paste_a_key_into_an_agent():
     body = (ROOT / "START-HERE.md").read_text(encoding="utf-8")
     assert "not in your agent" in body
     assert "sk-ant" in body, "it never says which secret is actually wanted"
+    # Field-run finding 2, ruled onto this page 2026-08-19: on a machine that
+    # stored the key once, the command says the item already exists — and a
+    # reader not told to expect that reads it as failure and retypes, or
+    # gives up. The evaluator's Mac is exactly that machine now.
+    assert "already exists" in body, (
+        "the page never says what the command prints on a machine that "
+        "already stored the key"
+    )
 
 
 def test_the_examples_listing_names_every_example_that_exists():

@@ -17,11 +17,10 @@ show me the actual error.
 ```
 
 Your agent installs everything, checks its work with `wring doctor`, sets up a
-worked example, and then drives Wringer for you — relaying every question to
-you and carrying your answers back. Every approval is yours: nothing is built,
-no check is installed, and nothing is handed over until you say yes to that
-question when it is asked. [AGENTS.md](AGENTS.md) is the whole runbook, and
-you can read it too.
+worked example, and then drives Wringer for you — relaying every question and
+carrying your answers back. Every approval is yours: nothing is built, no
+check is installed, nothing is handed over until you say yes when asked.
+[AGENTS.md](AGENTS.md) is the whole runbook, and you can read it too.
 
 ## 2. Store your key — the one Terminal command, and it is yours alone
 
@@ -35,9 +34,10 @@ security add-generic-password -s anthropic -a wringer -w
 ```
 
 There is deliberately no value after `-w`: your Mac prompts you and hides what
-you type, so the key never reaches your screen, your shell history, or
-anything your agent can read. The run command reads it from the Keychain
-directly, and the setup questions tell you where it will be sent.
+you type, so the key never reaches your screen, your history, or anything your
+agent can read. The run command reads it from the Keychain directly, and the
+setup questions say where it will be sent. If it answers that the item
+**already exists**, you stored it before and it is still there — you are done.
 
 ## What to expect
 
@@ -51,5 +51,5 @@ requirements yet, and a run that says so is the product working. The endings:
 Two honest warnings. Wringer does not sandbox your agent — it runs with the
 same access you have. And if the builder cannot authenticate, its turn ends
 having changed nothing: the run says so in words now, and prints its progress
-as it goes, so a long build looks like work rather than a hang. If nothing has
-moved for several minutes, Ctrl+C is safe — nothing of yours is touched.
+as it goes, so a long build looks like work rather than a silent stall. If
+nothing moves for several minutes, Ctrl+C is safe — nothing of yours is touched.

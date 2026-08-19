@@ -66,6 +66,12 @@ the guess. But the two causes it names did not include the one that happened,
 and a third clause naming "or produced nothing it could use" would have been
 truer. **Flagged, not fixed: the wording is Fable's.**
 
+> **Ruled same day, 2026-08-19:** the third clause was adopted exactly as
+> flagged — the hint now reads *"…could not authenticate, could not see the
+> work, or produced nothing it could use"* (core `c492a7f`, guard red-watched
+> against the two-cause wording). The quotes above are the capture and are
+> unchanged; this note is the correction.
+
 ## What the drive FOUND
 
 **In `--emit json` the ending went to stderr, so an agent following
