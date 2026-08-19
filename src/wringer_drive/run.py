@@ -24,6 +24,7 @@ import json
 import shutil
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -501,6 +502,40 @@ def run_command(repo: Path, argv: list[str], env: dict | None = None
     )
 
 
+def run_relaying(repo: Path, argv: list[str]) -> subprocess.CompletedProcess:
+    """THE LOOP INVOCATION ONLY (R4): the engine's heartbeat, relayed live.
+
+    Every other engine call is over in moments and `run_command`'s captured
+    pipes are fine. The loop runs for minutes, and capturing its stderr meant
+    the operator saw nothing between "Building now" and the ending — a
+    working build indistinguishable from a hung one, for as long as the
+    worker's timeout. The engine's stderr lines are relayed to DRIVE's stderr
+    AS THEY ARRIVE, verbatim: the engine's bytes, never a progress sentence
+    of DRIVE's own. They are collected as well, so the error path still
+    carries the engine's words. stdout is collected whole — it is the one
+    JSON object the contract promises, untouched in both emit modes.
+    """
+    proc = subprocess.Popen(
+        argv, cwd=repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True,
+    )
+    relayed: list[str] = []
+
+    def pump() -> None:
+        for line in proc.stderr:
+            sys.stderr.write(line)
+            sys.stderr.flush()
+            relayed.append(line)
+
+    pumping = threading.Thread(target=pump, daemon=True)
+    pumping.start()
+    out = proc.stdout.read()
+    code = proc.wait()
+    pumping.join(timeout=10)
+    return subprocess.CompletedProcess(argv, code, stdout=out,
+                                       stderr="".join(relayed))
+
+
 def _json_or_stop(done: subprocess.CompletedProcess, *, allow: tuple[int, ...]
                   ) -> dict:
     """The one JSON object a `--json` verb printed, or a stop carrying its words.
@@ -823,7 +858,7 @@ def build_steps(repo: Path) -> list[Step]:
         "attempts as the project allows.",
     )
     outcome = _json_or_stop(
-        run_command(repo, [engine("wring"), "run", "--json"]), allow=(0, 1)
+        run_relaying(repo, [engine("wring"), "run", "--json"]), allow=(0, 1)
     )
     reason = str(outcome.get("reason") or "")
     from wringer_board import refusals

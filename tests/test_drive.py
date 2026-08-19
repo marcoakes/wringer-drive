@@ -566,6 +566,41 @@ def test_no_approval_means_no_gate_is_INSTALLED_and_no_worker_runs(
 # --- INVARIANT 3: refusal-surface, three branches ---------------------------
 
 
+@pytest.mark.parametrize("emit", ["text", "json"])
+def test_the_build_is_never_silent_in_either_emit_mode(
+    project, tmp_path, capsys, emit
+):
+    """**R4: between "Building now" and the ending, the operator saw NOTHING.**
+
+    The engine's own iteration/gate/worker lines were captured and discarded,
+    so a working build and a hung one looked identical for up to fifteen
+    minutes — the field run's evaluator killed a healthy-looking process at
+    three. The loop invocation now relays the ENGINE's stderr to DRIVE's
+    stderr AS IT ARRIVES, verbatim: DRIVE writes no progress sentence of its
+    own, and stdout keeps its contract in both modes — the step stream in
+    text, one object per line in json.
+    """
+    import io
+    import sys
+
+    document = prd(tmp_path)
+    sys.stdin = io.StringIO("The ones on screen.\nyes\n")
+    try:
+        main(["run", str(document), "--repo", str(project), "--emit", emit])
+    finally:
+        sys.stdin = sys.__stdin__
+
+    out, err = capsys.readouterr()
+    assert "iteration 1/" in err, (
+        "the engine's heartbeat never reached the operator — the build ran "
+        "silent"
+    )
+    assert "iteration 1/" not in out, "progress leaked into the step stream"
+    if emit == "json":
+        for line in filter(None, out.splitlines()):
+            json.loads(line)  # the contract survives the relay
+
+
 def test_a_mapped_refusal_renders_the_boards_sentence_and_its_question():
     from wringer_board import refusals
 
