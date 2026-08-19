@@ -1233,14 +1233,20 @@ def test_the_board_is_written_at_each_PHASE_BOUNDARY_not_only_at_the_end():
 
     # The call sites are what this guard is about; driving a whole run here
     # would test the harness rather than the boundaries.
-    assert source.count("run_module.render_board(repo)") >= 4, (
-        "the board is rendered fewer times than there are phase boundaries — "
-        "after approval, after the gates settle, and at the ending"
+    # **Each WINDOW is checked, not a total count.** A count of call sites
+    # passes with a boundary removed, because the ending renders the board
+    # several times — this guard's first version did exactly that and stayed
+    # green when the post-approval render was deleted.
+    windows = (
+        ('id="approved"', "Step 7 — the proposed gates",
+         "between the approval and the gate question"),
+        ("Step 7 — the proposed gates", "Step 8 — the loop",
+         "between the gates settling and the build"),
     )
-    after_approval = source.index('id="approved"')
-    after_gates = source.index("Step 8 — the loop")
-    first = source.index("run_module.render_board(repo)", after_approval)
-    assert first < after_gates, (
-        "nothing renders the board between approval and the build; the page "
-        "is blank for the longest phase of the run"
-    )
+    for start_marker, end_marker, where in windows:
+        start = source.index(start_marker)
+        end = source.index(end_marker)
+        assert "run_module.render_board(repo)" in source[start:end], (
+            f"nothing renders the board {where}; the page a person watches is "
+            "stale for that whole phase"
+        )
