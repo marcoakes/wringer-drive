@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wringer-drive"
-version = "0.1.0"
+dynamic = ["version"]
 description = "One verb: prose in, a board out. The operating surface for a product manager."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,6 +18,9 @@ dev = ["pytest>=8", "ruff"]
 
 [project.scripts]
 wringer-drive = "wringer_drive.__main__:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "wringer_drive.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

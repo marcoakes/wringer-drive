@@ -1,0 +1,145 @@
+name: release
+
+# Publish to PyPI when a v* tag is pushed — with NO stored credential.
+#
+# **This package has never been published, and it is the one a product manager
+# actually installs.** It declares `wringer` and `wringer-board` as
+# dependencies; `wringer` is on PyPI, `wringer-board` was not, so
+# `pip install wringer-drive` was unresolvable. Proved from a clean venv on
+# 2026-08-19. The install story was therefore "clone three repositories",
+# which is the source juggling this file exists to end.
+#
+# ORDERING: `wringer-board` MUST be published before this. A release here
+# against an unpublished board will fail at the install probe below — loudly,
+# before anything reaches the index — rather than shipping a package nobody
+# can install.
+#
+# PyPI Trusted Publishing exchanges GitHub's OIDC token for a short-lived
+# upload token at publish time. No secret in the repo, none to rotate or leak.
+#
+# ONE-TIME SETUP, on pypi.org (Marc, once):
+#   Publishing -> Add a new PENDING publisher
+#     PyPI project name: wringer-drive
+#     Owner:             marcoakes
+#     Repository:        wringer-drive
+#     Workflow name:     release.yml
+#     Environment:       pypi
+#   Then create the `pypi` environment under Settings -> Environments.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and publish, e.g. v0.4.0"
+        required: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: marcoakes/wringer
+          path: .engine
+      - uses: actions/checkout@v4
+        with:
+          repository: marcoakes/wringer-board
+          path: .board
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: pip install -e '.[dev]' -e ./.engine -e ./.board
+      - name: The suite must be green at the tag
+        run: pytest -q
+      - name: Lint the whole repository
+        # `ruff check .`, not `ruff check src tests` — a release went out red
+        # on 2026-08-19 because a newly added `tools/` directory sat outside
+        # the paths that were being linted and inside the paths CI lints.
+        run: ruff check .
+
+      - name: The tag and the package version must agree
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          PKG="v$(python -c 'import wringer_drive; print(wringer_drive.__version__)')"
+          echo "tag=$TAG package=$PKG"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error title=version mismatch::tag $TAG but package $PKG"
+            exit 1
+          fi
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build
+
+      # **THE PROBE THAT MATTERS FOR THIS PACKAGE.** Installing the wheel into
+      # a clean venv resolves `wringer` and `wringer-board` FROM THE INDEX, so
+      # this step fails exactly when the install story a product manager will
+      # follow is broken — including the case where the board has not been
+      # published yet. That is the failure this repo shipped for months
+      # without noticing, because nobody ever installed it the way a stranger
+      # would.
+      - name: The wheel installs from the INDEX and every verb runs
+        run: |
+          python -m venv /tmp/probe
+          if ! /tmp/probe/bin/pip install --quiet dist/*.whl; then
+            echo "::error title=unresolvable::wringer-drive cannot install from the index. Its dependencies (wringer, wringer-board) must all be published first"
+            exit 1
+          fi
+          /tmp/probe/bin/wringer-drive --help > /dev/null
+          # And the surfaces it drives must really be there — a drive that
+          # installs but cannot reach the board is not an install.
+          /tmp/probe/bin/wring --version
+          /tmp/probe/bin/wringer-board --help > /dev/null
+          VERBS=$(/tmp/probe/bin/python -c '
+          from wringer_drive.__main__ import build_parser
+          print(" ".join(
+              name
+              for action in build_parser()._actions
+              if getattr(action, "choices", None)
+              for name in action.choices
+          ))
+          ')
+          echo "probing: $VERBS"
+          test -n "$VERBS" || { echo "::error title=no verbs found::the probe would pass while checking nothing"; exit 1; }
+          for v in $VERBS; do
+            /tmp/probe/bin/wringer-drive "$v" --help > /dev/null || {
+              echo "::error title=broken verb::$v"; exit 1; }
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc  # v1.12.4
+        with:
+          skip-existing: true
