@@ -873,6 +873,11 @@ def build_steps(repo: Path) -> list[Step]:
     from wringer_board import refusals
 
     ending = stop_for(refusals.LOOP_ENDING, reason)
+    # R1: `no_progress` cannot say whether the worker tried and failed or
+    # never engaged at all. When the engine diagnosed the latter, its own
+    # sentence rides along as `engine_words` — the board's mapped sentence
+    # for the ending stays byte-identical, and this package still writes
+    # nothing of its own.
     return [
         started,
         Step(
@@ -880,11 +885,27 @@ def build_steps(repo: Path) -> list[Step]:
             id=f"build:{reason or 'unknown'}",
             text=ending.text,
             question=ending.question,
-            engine_words=ending.engine_words,
+            engine_words=_worker_words(outcome) or ending.engine_words,
             detail={"iterations": outcome.get("iterations"),
                     "loop": outcome.get("loop_dir")},
         ),
     ]
+
+
+def _worker_words(outcome: dict) -> str | None:
+    """The engine's own account of a worker turn that did nothing, verbatim.
+
+    Read off `wring run --json`'s `worker_diagnosis` — the same object the
+    `worker-diagnosis.json` sibling carries, so the console, the record and
+    this surface cannot disagree. Every string here is the ENGINE's; nothing
+    is composed, and the remedy names the operator's channel without naming
+    a variable, because the engine's does.
+    """
+    found = outcome.get("worker_diagnosis")
+    if not isinstance(found, dict):
+        return None
+    said = [str(found.get(key) or "").strip() for key in ("description", "remedy")]
+    return ". ".join(part for part in said if part) or None
 
 
 def latest_refusal_step(repo: Path, engine_words: str) -> Step:

@@ -49,6 +49,7 @@ requirements yet, and a run that says so is the product working. The endings:
 [docs/WRITING-A-REQUIREMENT.md](docs/WRITING-A-REQUIREMENT.md).
 
 Two honest warnings. Wringer does not sandbox your agent — it runs with the
-same access you have. And a known gap, still live: the build step can stall
-silently if the builder cannot authenticate — if nothing has happened for a
-couple of minutes, press Ctrl+C (nothing of yours is touched) and tell us.
+same access you have. And if the builder cannot authenticate, its turn ends
+having changed nothing: the run says so in words now, and prints its progress
+as it goes, so a long build looks like work rather than a hang. If nothing has
+moved for several minutes, Ctrl+C is safe — nothing of yours is touched.

@@ -601,6 +601,56 @@ def test_the_build_is_never_silent_in_either_emit_mode(
             json.loads(line)  # the contract survives the relay
 
 
+def test_a_worker_that_never_engaged_reaches_the_operator_as_ENGINE_WORDS():
+    """**R1's last mile: the diagnosis has to arrive where the PM is.**
+
+    The engine now says, on a loop whose worker finished having changed
+    nothing, that the agent could not authenticate or could not see the work,
+    and points at the operator's channel. DRIVE renders it through the
+    EXISTING mapped `no_progress` sentence — the board's wording byte-intact
+    — with the engine's account beside it as `engine_words`.
+
+    The payload here is the engine's real `--json` shape for that ending; what
+    is pinned is that DRIVE carries the engine's strings verbatim and composes
+    none of its own.
+    """
+    from wringer_board import refusals
+
+    saying = refusals.say(refusals.LOOP_ENDING, "no_progress")
+    engine = {
+        "status": "stopped",
+        "reason": "no_progress",
+        "iterations": 1,
+        "loop_dir": ".wringer/loops/x",
+        "worker_diagnosis": {
+            "face": "turn_changed_nothing",
+            "description": "the agent finished its turn without changing a "
+                           "file or reporting an error; this usually means it "
+                           "could not authenticate, or could not see the work",
+            "remedy": "what a worker is given is declared by the operator, in "
+                      "`run.worker.acp.env_passthrough`; nothing else crosses "
+                      "that boundary",
+            "stop_reason": "end_turn",
+            "files_written": 0,
+            "refusals": 0,
+        },
+    }
+
+    words = run_module._worker_words(engine)
+    assert words is not None
+    assert engine["worker_diagnosis"]["description"] in words
+    assert engine["worker_diagnosis"]["remedy"] in words
+    # The board still owns the ending's sentence, unchanged.
+    ending = run_module.stop_for(refusals.LOOP_ENDING, "no_progress")
+    assert ending.text == saying.sentence
+
+    # And an ending the engine did NOT diagnose carries nothing extra.
+    assert run_module._worker_words({"reason": "no_progress"}) is None
+    assert run_module._worker_words(
+        {"reason": "no_progress", "worker_diagnosis": None}
+    ) is None
+
+
 def test_a_mapped_refusal_renders_the_boards_sentence_and_its_question():
     from wringer_board import refusals
 
