@@ -160,6 +160,122 @@ def test_a_stream_with_nobody_behind_it_STOPS_rather_than_defaulting(
     assert "approved: false" in (project / "wringer.spec.yaml").read_text()
 
 
+def test_a_pasted_answers_overflow_never_reaches_the_approval(
+    project, tmp_path, capsys
+):
+    """**The interlock bug the field run hit, red first.**
+
+    A person pastes a multi-line answer to question 1. `input()` takes line 1;
+    the overflow stays buffered — and before this fix, the next buffered line
+    answered the APPROVAL. Here the overflow contains a stray `yes`, so the
+    plan was approved by leftover paste, not by a person. The real field run
+    had the mirror image: a stray line counted as "not yes" and DECLINED the
+    run.
+
+    A real pipe, not `io.StringIO`: the defect lives in what the operating
+    system and Python have buffered ahead of the prompt, which an in-memory
+    stdin does not model. Everything already waiting when a question is asked
+    is stale — drained, never read — so the stray lines cannot reach the
+    approval, and with nobody left on the line the run STOPS rather than
+    defaulting.
+    """
+    import os
+    import sys
+
+    document = prd(tmp_path)
+    read_end, write_end = os.pipe()
+    os.write(write_end, b"The ones on screen.\nyes\n")
+    os.close(write_end)
+    original = sys.stdin
+    sys.stdin = os.fdopen(read_end, "r")
+    try:
+        code = main(["run", str(document), "--repo", str(project)])
+    finally:
+        sys.stdin.close()
+        sys.stdin = original
+
+    after = (project / "wringer.spec.yaml").read_text(encoding="utf-8")
+    assert "approved: true" not in after, (
+        "a stray line from a pasted answer approved the plan — leftover text "
+        "answered the one question only a person may answer"
+    )
+    # With the stale text drained there is nobody on the line at the first
+    # question, and a stream with nobody behind it stops rather than defaults.
+    assert code == 2
+    assert "nobody on the other end" in capsys.readouterr().err
+
+
+def test_every_confirm_prompt_says_the_accepted_inputs():
+    """Field-run finding 11: the approval prompt never said what to type, and
+    the evaluator's guess became a decline. Every `confirm` DRIVE constructs
+    says the accepted inputs ON the prompt line — in both transports, since
+    the text IS the step."""
+    confirms = (
+        run_module.approval_step(),
+        run_module.delivery_step(),
+        run_module.trial_step({"gates_proposed": ["g-x"]}),
+        run_module.gate_approval_step({"gates_proposed": ["g-x"]}),
+    )
+    for step in confirms:
+        assert step.kind == "confirm"
+        assert "yes or no" in step.question.lower(), (
+            f"confirm {step.id!r} never says what to type: {step.question!r}"
+        )
+
+
+def test_an_answer_written_after_the_question_renders_is_never_drained(
+    project, tmp_path
+):
+    """The drain must discard only STALE text — its guard against overreach.
+
+    The designed transport (an agent, or a person actually typing) writes each
+    answer AFTER reading the question. A drain that ran after the render, or a
+    reader that buffered past the newline, would eat those answers too; this
+    drives the verb over real pipes exactly as `AGENTS.md` says to, and the
+    run must still reach approval.
+    """
+    import sys
+
+    document = prd(tmp_path)
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "wringer_drive", "run",
+         str(document), "--repo", str(project)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    answers = [
+        ("Which columns?", "The ones on screen.\n"),
+        ("Is that what you meant?", "yes\n"),
+    ]
+    # A drain that eats a live answer leaves both sides blocked on a read; the
+    # watchdog turns that hang into a loud failure instead of a stuck suite.
+    import threading
+
+    watchdog = threading.Timer(120, proc.kill)
+    watchdog.start()
+    try:
+        for line in proc.stdout:
+            if answers and answers[0][0] in line:
+                proc.stdin.write(answers.pop(0)[1])
+                proc.stdin.flush()
+        code = proc.wait(timeout=60)
+    finally:
+        watchdog.cancel()
+        proc.kill()
+
+    assert answers == [], f"never asked: {[a[0] for a in answers]}"
+    after = (project / "wringer.spec.yaml").read_text(encoding="utf-8")
+    assert "approved: true" in after, (
+        "an answer given after the question rendered was lost — the drain is "
+        "eating live answers, not stale ones"
+    )
+    # The chain then runs on to the delivery refusal (no remote), which is the
+    # fixture's honest ending — not a hang, not a success.
+    assert code != 0
+
+
 def test_a_no_at_the_plan_builds_nothing_and_changes_nothing(project, tmp_path, capsys):
     import io
     import sys

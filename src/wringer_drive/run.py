@@ -429,7 +429,8 @@ def approval_step() -> Step:
         kind=CONFIRM,
         id="approve",
         text="That is what will be built, and how each piece will be proved.",
-        question="Is that what you meant? Nothing is built until you say yes.",
+        question="Is that what you meant? Nothing is built until you say yes. "
+        "Type yes or no.",
         refusing_means="nothing is built, nothing is changed, and the plan "
         "stays where you can edit the requirements and try again.",
     )
@@ -474,7 +475,7 @@ def delivery_step() -> Step:
         id="deliver",
         text="The work is finished and the evidence is on the board.",
         question="Shall I hand this over — create the branch and open the "
-        "merge request?",
+        "merge request? Type yes or no.",
         refusing_means="nothing is sent anywhere. The work and its evidence "
         "stay on this machine and you can hand it over later.",
     )
@@ -637,7 +638,7 @@ def trial_step(proposal: dict) -> Step:
         text=f"Those checks have not been run yet: {names}.",
         question="Shall I try them against the project as it stands, before "
         "you decide? A check that already passes cannot show the difference "
-        "this work makes.",
+        "this work makes. Type yes or no.",
         refusing_means="they are not run, and you decide whether to add them "
         "without knowing whether any of them already passes.",
     )
@@ -760,7 +761,7 @@ def gate_approval_step(proposal: dict) -> Step:
         kind=CONFIRM,
         id="install-gates",
         text=f"That change adds: {names}.",
-        question="Shall I add those checks to the project?",
+        question="Shall I add those checks to the project? Type yes or no.",
         refusing_means="the project's settings are left exactly as they are, "
         "and nothing is built.",
     )

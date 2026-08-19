@@ -10,14 +10,26 @@ objects whose text came from the engine or the board, which is the only reason
 they cannot drift into two products with two vocabularies.
 
 **There is no `--yes`.** The approval question is asked by this process, after
-this process rendered the plan, and no flag or environment variable answers it.
+this process rendered the plan, and no flag or environment variable answers it
+— and neither does text that was already on stdin before the question was
+rendered. Stale input is drained, never read: a pre-piped `yes` is an approval
+nobody gave, and a pasted answer's overflow is not an answer to the next
+question.
 """
 
 from __future__ import annotations
 
 import argparse
+import io
+import os
+import select
 import sys
 from pathlib import Path
+
+try:
+    import termios
+except ImportError:  # pragma: no cover — non-POSIX; the drain degrades below
+    termios = None
 
 from wringer_drive import run as run_module
 from wringer_drive.steps import emit_json
@@ -90,16 +102,82 @@ def _render(steps, mode: str, stream=None) -> None:
     stream.flush()
 
 
+def _drain_stale_stdin() -> None:
+    """Discard whatever is already waiting on stdin, BEFORE a question renders.
+
+    Text that arrived before a question existed cannot be that question's
+    answer: it is a pasted answer's overflow, or a script's pre-supplied text.
+    The field run had a stray line DECLINE a build; the mirror image — a stray
+    `yes` approving one — is the consent model being answered by leftovers.
+    The order in `_ask` is the whole mechanism: drain, then render, then read.
+    An answer written after the question rendered is never touched.
+
+    In-memory stdins (the suite's `io.StringIO`) have no descriptor and hold
+    nothing the OS buffered, so there is nothing stale to drain there.
+    """
+    try:
+        fd = sys.stdin.fileno()
+    except (OSError, ValueError, io.UnsupportedOperation):
+        return
+    try:
+        if os.isatty(fd):
+            # Typed-ahead lines live in the terminal driver, not the pipe.
+            if termios is not None:
+                termios.tcflush(fd, termios.TCIFLUSH)
+            return
+        while True:
+            ready, _, _ = select.select([fd], [], [], 0)
+            if not ready or os.read(fd, 4096) == b"":
+                return
+    except OSError:  # pragma: no cover — an unselectable stdin drains nothing
+        return
+
+
+def _read_line() -> str:
+    """One line from stdin, and NOT ONE BYTE MORE.
+
+    `input()` on a piped stdin buffers everything available into the text
+    wrapper on first read — so a pasted answer's overflow ends up somewhere no
+    descriptor-level drain can see it, pre-answering questions that have not
+    been asked. Reading the descriptor byte-wise up to the newline leaves the
+    overflow IN the pipe, where the next `_drain_stale_stdin` discards it.
+
+    Raises EOFError on a closed stream with nothing read, exactly as `input()`
+    does, so the nobody-there stop below keeps its meaning.
+    """
+    try:
+        fd = sys.stdin.fileno()
+    except (OSError, ValueError, io.UnsupportedOperation):
+        line = sys.stdin.readline()
+        if line == "":
+            raise EOFError from None
+        return line.rstrip("\n")
+    taken = bytearray()
+    while True:
+        byte = os.read(fd, 1)
+        if byte == b"":
+            if not taken:
+                raise EOFError
+            break
+        if byte == b"\n":
+            break
+        taken += byte
+    return taken.decode("utf-8", "replace").rstrip("\r")
+
+
 def _ask(step, mode: str) -> str:
     """Put one step in front of whoever is there, and take their answer.
 
     In `json` mode the driver — an agent — has already been handed the step and
     replies on stdin. In `text` mode a person types it. **Same step, same
-    text**; only the transport differs.
+    text**; only the transport differs. Anything on stdin from BEFORE the step
+    rendered is stale and is drained unread — leftover text must never answer
+    a question, least of all a `confirm`.
     """
+    _drain_stale_stdin()
     _render([step], mode)
     try:
-        return input().strip()
+        return _read_line().strip()
     except EOFError:
         # **A non-interactive stream is not a yes.** Ruling 2: on a stream with
         # nobody behind it the verb STOPS and says why, rather than choosing a
