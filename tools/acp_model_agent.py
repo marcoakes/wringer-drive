@@ -23,6 +23,7 @@ import os
 import sys
 import urllib.request
 
+
 def _argv(index: int, default: str) -> str:
     return sys.argv[index] if len(sys.argv) > index else default
 
