@@ -1095,22 +1095,39 @@ def test_the_capture_harness_never_reports_emptiness_SILENTLY():
     source = (ROOT / "tools" / "acp_model_agent.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
 
+    def says_something(statement: ast.stmt) -> bool:
+        call = getattr(statement, "value", None)
+        return (
+            isinstance(statement, ast.Expr)
+            and isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Name)
+            and call.func.id == "print"
+            and any(
+                kw.arg == "file" and "stderr" in (ast.unparse(kw.value))
+                for kw in call.keywords
+            )
+        )
+
+    # **Checked on the RETURN's own block, not on the enclosing function.**
+    # The first version searched the whole function's source for a stderr
+    # print, so once ONE branch explained itself the others could stay silent
+    # — and reverting a branch to a bare `return []` left this green. A guard
+    # whose subject is a particular statement must look at that statement.
     bare = []
     for node in ast.walk(tree):
-        if not isinstance(node, ast.FunctionDef):
-            continue
-        body = list(ast.walk(node))
-        for index, inner in enumerate(body):
-            if not isinstance(inner, ast.Return):
+        for field in ("body", "orelse", "finalbody"):
+            block = getattr(node, field, None)
+            if not isinstance(block, list):
                 continue
-            value = inner.value
-            if isinstance(value, ast.List) and not value.elts:
-                # An empty-list return must be preceded by something that says
-                # so. Checked on the enclosing function's source, not on the
-                # statement alone, because the print sits above the return.
-                segment = ast.get_source_segment(source, node) or ""
-                if "file=sys.stderr" not in segment:
-                    bare.append(f"{node.name}:{inner.lineno}")
+            for index, statement in enumerate(block):
+                if not isinstance(statement, ast.Return):
+                    continue
+                value = statement.value
+                if not (isinstance(value, ast.List) and not value.elts):
+                    continue
+                before = block[index - 1] if index else None
+                if before is None or not says_something(before):
+                    bare.append(f"line {statement.lineno}")
     assert not bare, (
         f"these return an empty list with nothing said: {bare}. Downstream "
         "that is indistinguishable from 'the worker found nothing to change'"
