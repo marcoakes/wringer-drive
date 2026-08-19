@@ -966,3 +966,113 @@ def test_start_here_is_one_screen_and_hands_everything_else_to_the_agent():
     )
     assert "AGENTS.md" in body, "the paste block never points the agent at it"
     assert "add-generic-password" in body, "the key act is missing"
+
+
+# --- the runbook's own commands, executed ----------------------------------
+#
+# **`bf44aed` fixed a runbook command that 404s on the example's own layout.**
+# The document said `PRD.md` where the example puts it one level up, and no
+# test could see it because a doc that only a real run falsifies is a doc
+# nothing checks. This is the permanent guard for that class.
+
+
+def _fenced_shell_commands(body: str) -> list[str]:
+    """Every command inside a ```bash / ```sh fence in the runbook."""
+    found, inside = [], False
+    for line in body.splitlines():
+        if line.strip().startswith("```"):
+            inside = line.strip().lstrip("`").strip() in ("bash", "sh", "shell")
+            continue
+        if inside and line.strip() and not line.strip().startswith("#"):
+            found.append(line.strip())
+    return found
+
+
+def test_every_path_the_runbook_names_exists_in_this_repository():
+    """The `../PRD.md` class of defect: a path in a command that is simply
+    not there. Checked against the tree rather than against the sentence."""
+    missing = []
+    for command in _fenced_shell_commands(agents_md()):
+        for token in command.split():
+            if token.startswith(("~", "-", "$", "|", "&")) or "=" in token:
+                continue
+            if "/" in token and not token.startswith(("http", "@")):
+                candidate = token.strip("'\"")
+                # Only paths the runbook claims live HERE.
+                if candidate.startswith(("wringer-drive/", "examples/", "docs/")):
+                    if not (ROOT / candidate.split("wringer-drive/")[-1]).exists():
+                        missing.append((command, candidate))
+    assert not missing, (
+        f"AGENTS.md names paths this repository does not have: {missing}. A "
+        "runbook only a real run can falsify is a runbook nothing checks"
+    )
+
+
+def test_the_runbook_names_the_example_PRD_where_the_example_puts_it():
+    """The exact defect `bf44aed` fixed, pinned so it cannot come back.
+
+    The worked example's setup places the document one level ABOVE the
+    project, so the drive command must name `../PRD.md`. A runbook that says
+    `PRD.md` sends the agent at a file that is not there — and the person
+    watching sees the tool fail on its own instructions."""
+    for example in ("arcade", "pipeline"):
+        target = ROOT / "examples" / example
+        if not target.is_dir():
+            continue
+        assert (target / "PRD.md").is_file(), (
+            f"examples/{example}/PRD.md is gone — the runbook's `../PRD.md` "
+            "would now be wrong in the other direction"
+        )
+        assert (target / "project").is_dir(), (
+            f"examples/{example}/project is gone, so `--repo .` no longer "
+            "means what the runbook says"
+        )
+
+    body = agents_md()
+    assert "../PRD.md" in body, (
+        "the runbook stopped saying `../PRD.md`. The example puts the "
+        "document one level above the project; `PRD.md` 404s there, which is "
+        "what bf44aed fixed"
+    )
+
+
+def test_the_runbook_only_names_verbs_the_tools_actually_have():
+    """A runbook naming a verb that does not exist is a runbook that fails on
+    its first instruction. Checked against the real CLIs.
+
+    **Extracted from the document, never from a list kept here.** The first
+    version of this guard checked a hardcoded tuple of verbs, so renaming one
+    in the runbook to something that does not exist slipped straight through:
+    the fake verb was not in the list, and the real verb was no longer in the
+    document, so nothing was checked either way. A guard that only sees what
+    it already expects cannot catch the thing it exists for.
+    """
+    import re
+    import subprocess
+    import sys
+
+    body = agents_md()
+    for module, command in (("wringer_board", "wringer-board"),
+                            ("wringer_drive", "wringer-drive")):
+        # Anchored to COMMAND POSITION — start of a line, optionally indented.
+        # A loose `\b...\s+` spanned newlines, so `--with-editable
+        # ./wringer-board` followed by the next line's `uv` read as the verb
+        # `uv`. It must match where a command is typed, not wherever the name
+        # appears in prose or in a path.
+        named = set(re.findall(
+            rf"^[ \t]*{re.escape(command)}[ \t]+([a-z][a-z-]*)",
+            body, re.MULTILINE,
+        ))
+        if not named:
+            continue
+        listed = subprocess.run(
+            [sys.executable, "-m", module, "--help"],
+            capture_output=True, text=True, check=False,
+        ).stdout
+        for verb in sorted(named):
+            assert verb in listed, (
+                f"AGENTS.md tells the agent to run `{command} {verb}`, and "
+                f"{command} has no such verb. Its verbs are in the --help "
+                "above; a runbook that names one that does not exist fails on "
+                "its own first instruction"
+            )
