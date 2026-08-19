@@ -601,6 +601,67 @@ def test_the_build_is_never_silent_in_either_emit_mode(
             json.loads(line)  # the contract survives the relay
 
 
+def test_in_json_mode_the_ENDING_arrives_on_STDOUT_like_every_other_step(
+    project, tmp_path, capsys
+):
+    """**Found by driving it, 2026-08-19 — not by reading.**
+
+    `main` rendered a non-zero stop to STDERR, which is right for a person at
+    a terminal and wrong for the transport this package was built for: an
+    agent following `AGENTS.md` reads steps from stdout, so the LAST step —
+    the refusal, the news, the reason the run ended — was the one step it
+    never saw. In the verification drive the ending only appeared because the
+    relay happened to pump stderr too; a strict reader would have shown the
+    person nothing at all about why their build stopped.
+
+    stdout is the step stream in json mode. Every step, including the last.
+    """
+    import io
+    import sys
+
+    document = prd(tmp_path)
+    sys.stdin = io.StringIO("The ones on screen.\nyes\n")
+    try:
+        code = main(["run", str(document), "--repo", str(project),
+                     "--emit", "json"])
+    finally:
+        sys.stdin = sys.__stdin__
+
+    assert code != 0, "this fixture has no remote, so delivery must refuse"
+    out, _ = capsys.readouterr()
+    steps = [json.loads(line) for line in out.splitlines() if line.strip()]
+    assert steps, "no steps reached stdout at all"
+    assert steps[-1]["kind"] == "stopped", (
+        "the run ended on a refusal and the step stream does not carry it — "
+        f"an agent reading stdout saw {steps[-1]['id']!r} last and never "
+        "learned why the run stopped"
+    )
+
+
+def test_in_text_mode_a_non_zero_ending_still_goes_to_stderr(
+    project, tmp_path, capsys
+):
+    """The other half, so the fix above cannot quietly move a person's error
+    output: at a terminal a failure belongs on the error channel, and that is
+    unchanged."""
+    import io
+    import sys
+
+    document = prd(tmp_path)
+    sys.stdin = io.StringIO("The ones on screen.\nyes\n")
+    try:
+        code = main(["run", str(document), "--repo", str(project)])
+    finally:
+        sys.stdin = sys.__stdin__
+
+    assert code != 0
+    out, err = capsys.readouterr()
+    assert "handover is being held" in err, (
+        "a terminal user's refusal left the error channel"
+    )
+    assert "handover is being held" not in out
+
+
 def test_a_worker_that_never_engaged_reaches_the_operator_as_ENGINE_WORDS():
     """**R1's last mile: the diagnosis has to arrive where the PM is.**
 

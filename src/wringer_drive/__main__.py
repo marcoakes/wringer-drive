@@ -75,10 +75,22 @@ def main(argv: list[str] | None = None) -> int:
         return _run(session, args)
     except run_module.Stop as stop:
         session.emit(stop.step)
+        # **Which channel the ENDING goes to, and why it differs by mode.**
+        #
+        # At a terminal, a failure belongs on the error channel: that is what
+        # a person's shell, pipeline and scrollback expect.
+        #
+        # In `json` mode stdout IS the step stream, and the ending is a step
+        # like any other — the last one, and the one carrying the news. Found
+        # by driving it on 2026-08-19: the refusal went to stderr, so an agent
+        # following `AGENTS.md` (read one object per line from stdout) never
+        # saw why the run stopped, and would have shown the person a board and
+        # silence. The contract does not have an exception for the most
+        # important object in it.
         _render(
             session.steps[-1:],
             args.emit,
-            sys.stderr if stop.exit_code else sys.stdout,
+            sys.stderr if stop.exit_code and args.emit != "json" else sys.stdout,
         )
         return stop.exit_code
 
