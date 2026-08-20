@@ -1,3 +1,29 @@
+> # ⚠️ THIS CODE HAS MOVED — DO NOT EDIT IT HERE
+>
+> **`wringer_drive` now ships inside the `wringer` package**, as of
+> 2026-08-20. The canonical source is
+> [`marcoakes/wringer`](https://github.com/marcoakes/wringer) at
+> `src/wringer_drive/`, its documents are at `docs/drive/`, and the whole
+> thing installs with:
+>
+> ```bash
+> pip install wringer
+> wringer-drive --help
+> ```
+>
+> **The copy in this repository is already out of date** — the merged copy has
+> been formatted and lint-fixed and this one has not. An edit made here
+> reaches nobody.
+>
+> Why it moved, and this package is the one that proved the point: it declared
+> `wringer` and `wringer-board` as dependencies, and `wringer-board` had never
+> been published — so `pip install wringer-drive` could not resolve for
+> months, and the documented install was "clone three repositories". Inside
+> one distribution the dependency it could not satisfy is simply the package
+> it is part of.
+>
+> This repository stays up for its history.
+
 # wringer-drive
 
 **One verb. A document in, a page out.**
